@@ -434,21 +434,28 @@
     });
     o.bloggers = (o.bloggers || []).filter(function (b) { return b.id !== 'b_me'; });
 
-    /* 广州三家原来是我按「海珠区江南大道」估的坐标，实际都在赤岗。
-       一次性把位置改过来（改完打标记，以后你手动挪过的不再覆盖）。 */
-    if (!o.fix_gz) {
+    /* 广州三家原来是我按「海珠区江南大道」估的坐标，实际都在新港中路（赤岗—客村一带）。
+       这次用高德 Web服务 Key 查到了门牌级坐标：一次性改过来，改完打标记，
+       以后你手动挪过的不再覆盖。 */
+    if (!o.fix_gz2) {
       var gz = {
-        p_chengfeng: [23.1001, 113.3290, '赤岗东路'],
-        p_laodifang: [23.0994, 113.3281, '赤岗东路'],
-        p_shengxiangting: [23.0982, 113.3252, '赤岗 丽影广场']
+        p_chengfeng: [23.095249, 113.329860, '新港中路 456 号广发新村'],
+        p_laodifang: [23.095466, 113.329684, '新港中路 452 号之 2 毛纺小区'],
+        p_shengxiangting: [23.095746, 113.320162, '新港中路 352 号丽影广场 C 区']
+      };
+      var gzName = {
+        p_chengfeng: '诚锋石磨肠粉',
+        p_laodifang: '老地方巢皮肠粉（笼仔蒸饭）',
+        p_shengxiangting: '盛香亭热卤（丽影广场店）'
       };
       (o.places || []).forEach(function (p) {
         var f = gz[p.id]; if (!f) return;
         p.lat = f[0]; p.lng = f[1]; p.address = f[2]; p.region = '海珠区';
+        if (gzName[p.id]) p.name = gzName[p.id];
       });
       /* 你住在广州。示例那 18 家在上海，默认城市改成广州，少按一次。 */
       if (o.city === '上海') o.city = '广州';
-      o.fix_gz = 1;
+      o.fix_gz = 1; o.fix_gz2 = 1;
     }
     return o;
   }

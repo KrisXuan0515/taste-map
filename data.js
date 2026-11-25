@@ -240,24 +240,24 @@ window.SEED = {
       sourceUrl: '', bloggerId: ''
     },
     {
-      id: 'p_chengfeng', kind: 'eat', name: '诚峰石磨肠粉', city: '广州',
-      lat: 23.1001, lng: 113.3290, address: '赤岗东路', region: '海珠区',
+      id: 'p_chengfeng', kind: 'eat', name: '诚锋石磨肠粉', city: '广州',
+      lat: 23.095249, lng: 113.329860, address: '新港中路 456 号广发新村', region: '海珠区',
       flavors: [], category: '粤菜', price: 1, scene: '一人食',
       dish: '石磨肠粉',
       quote: '自己找的：米浆现磨，布拉肠薄到透光，豉油偏甜。',
       sourceUrl: '', own: true
     },
     {
-      id: 'p_shengxiangting', kind: 'eat', name: '盛香亭丽影广场店', city: '广州',
-      lat: 23.0982, lng: 113.3252, address: '赤岗 丽影广场', region: '海珠区',
+      id: 'p_shengxiangting', kind: 'eat', name: '盛香亭热卤（丽影广场店）', city: '广州',
+      lat: 23.095746, lng: 113.320162, address: '新港中路 352 号丽影广场 C 区', region: '海珠区',
       flavors: [], category: '热卤', price: 1, scene: '一人食',
       dish: '热卤 · 藕片 · 鸭脖',
       quote: '自己找的：热卤现捞，辣度能选微辣；当宵夜比当正餐合适。',
       sourceUrl: '', own: true
     },
     {
-      id: 'p_laodifang', kind: 'eat', name: '老地方巢皮肠粉', city: '广州',
-      lat: 23.0994, lng: 113.3281, address: '赤岗东路', region: '海珠区',
+      id: 'p_laodifang', kind: 'eat', name: '老地方巢皮肠粉（笼仔蒸饭）', city: '广州',
+      lat: 23.095466, lng: 113.329684, address: '新港中路 452 号之 2 毛纺小区', region: '海珠区',
       flavors: [], category: '粤菜', price: 1, scene: '一人食',
       dish: '巢皮肠粉',
       quote: '踩雷：皮厚、豉油死咸。',
