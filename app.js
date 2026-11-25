@@ -433,6 +433,23 @@
       p.own = !!p.own;
     });
     o.bloggers = (o.bloggers || []).filter(function (b) { return b.id !== 'b_me'; });
+
+    /* 广州三家原来是我按「海珠区江南大道」估的坐标，实际都在赤岗。
+       一次性把位置改过来（改完打标记，以后你手动挪过的不再覆盖）。 */
+    if (!o.fix_gz) {
+      var gz = {
+        p_chengfeng: [23.1001, 113.3290, '赤岗东路'],
+        p_laodifang: [23.0994, 113.3281, '赤岗东路'],
+        p_shengxiangting: [23.0982, 113.3252, '赤岗 丽影广场']
+      };
+      (o.places || []).forEach(function (p) {
+        var f = gz[p.id]; if (!f) return;
+        p.lat = f[0]; p.lng = f[1]; p.address = f[2]; p.region = '海珠区';
+      });
+      /* 你住在广州。示例那 18 家在上海，默认城市改成广州，少按一次。 */
+      if (o.city === '上海') o.city = '广州';
+      o.fix_gz = 1;
+    }
     return o;
   }
 
@@ -600,6 +617,21 @@
   function backupDays() {
     if (!S.lastBackup) return -1;
     return Math.floor((Date.now() - S.lastBackup) / 86400000);
+  }
+
+  /* 请浏览器把这份数据标成「持久」，降低被自动清理的概率。
+     用户记不住手动备份，这一步就替他做掉。 */
+  function askPersist() {
+    try {
+      if (!navigator.storage || !navigator.storage.persist) return;
+      navigator.storage.persisted().then(function (done) {
+        if (done) { state.persisted = 1; return; }
+        return navigator.storage.persist().then(function (granted) {
+          state.persisted = granted ? 1 : 0;
+          if (!granted) toast('浏览器没给「持久存储」，记得偶尔导一次备份');
+        });
+      });
+    } catch (e) {}
   }
   /* 「今儿这顿」：只对今天有效。人本来就会变，所以它和长期画像分开存。 */
   function moodOf() {
@@ -1017,7 +1049,8 @@
       '<div class="section-title">数据</div>' +
       '<div class="hint" style="padding:0 16px 6px">上次备份：' +
         (backupDays() < 0 ? '从没备份过' : backupDays() === 0 ? '今天' : backupDays() + ' 天前') +
-        '。数据只存在这台手机的浏览器里，Safari 会清久不用的网站。</div>' +
+        ' · 存储保护：' + (state.persisted ? '已开启' : '浏览器没给（所以要偶尔手动导一次）') +
+        '。数据只存在这台手机的浏览器里。</div>' +
       '<div style="padding:0 16px 24px">' +
         '<button class="btn ghost" data-act="export">导出备份</button>' +
         '<button class="btn ghost" data-act="import">导入备份</button>' +
@@ -1588,8 +1621,20 @@
     if (box) box.innerHTML = '<div class="hint">查高德…</div>';
     jsonp(url, function (d) {
       if (!d || String(d.status) !== '1' || !d.pois || !d.pois.length) {
-        var why = (d && d.info && d.info !== 'OK') ? d.info : '没搜到';
-        if (box) box.innerHTML = '<div class="hint">' + esc(why) + '。换个写法，或直接点地图。</div>';
+        var info = (d && d.info) || '';
+        var why = info && info !== 'OK' ? info : '没搜到';
+        /* 这两个错上次真踩过：Key 建成了别的类型，或者刚建的 Key 还没生效 */
+        if (info === 'USERKEY_PLAT_NOMATCH') {
+          why = '这个 Key 的类型不对——要在高德控制台选「Web服务」，不是 JS API 也不是微信小程序。' +
+            '去控制台给同一个应用再「添加」一个 Key，服务平台选 Web服务，然后把新的那串换进来';
+        } else if (info === 'INVALID_USER_KEY') {
+          why = '这串 Key 无效（或者刚建好还没生效，等一分钟）';
+        } else if (info === 'INSUFFICIENT_PRIVILEGES') {
+          why = '这个 Key 的权限不够，可能要实名认证';
+        } else if (info === 'DAILY_QUERY_OVER_LIMIT') {
+          why = '今天的免费额度用完了，明天再来';
+        }
+        if (box) box.innerHTML = '<div class="hint">' + esc(why) + '</div>';
         return;
       }
       state.poi = d.pois;
@@ -2008,6 +2053,7 @@
   S = load();
   render();
   locate();
+  askPersist();
 
   /* 暴露给自检脚本 */
   window.__tm = {

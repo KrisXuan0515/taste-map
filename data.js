@@ -3,7 +3,7 @@
  * 博主原话为示例文案，不是真实引用。
  */
 window.SEED = {
-  city: '上海',
+  city: '广州',
   me: {
     /* 口味向量：0–5，含义见 app.js 里的 DIMS。
        这里是「按用户自述」写的初始画像：爱吃甜、爱藤椒的麻、不吃辣、嫌咸。 */
@@ -241,7 +241,7 @@ window.SEED = {
     },
     {
       id: 'p_chengfeng', kind: 'eat', name: '诚峰石磨肠粉', city: '广州',
-      lat: 23.0928, lng: 113.2618, address: '海珠区', region: '海珠区',
+      lat: 23.1001, lng: 113.3290, address: '赤岗东路', region: '海珠区',
       flavors: [], category: '粤菜', price: 1, scene: '一人食',
       dish: '石磨肠粉',
       quote: '自己找的：米浆现磨，布拉肠薄到透光，豉油偏甜。',
@@ -249,7 +249,7 @@ window.SEED = {
     },
     {
       id: 'p_shengxiangting', kind: 'eat', name: '盛香亭丽影广场店', city: '广州',
-      lat: 23.0956, lng: 113.2738, address: '江南大道中丽影广场', region: '海珠区',
+      lat: 23.0982, lng: 113.3252, address: '赤岗 丽影广场', region: '海珠区',
       flavors: [], category: '热卤', price: 1, scene: '一人食',
       dish: '热卤 · 藕片 · 鸭脖',
       quote: '自己找的：热卤现捞，辣度能选微辣；当宵夜比当正餐合适。',
@@ -257,7 +257,7 @@ window.SEED = {
     },
     {
       id: 'p_laodifang', kind: 'eat', name: '老地方巢皮肠粉', city: '广州',
-      lat: 23.0902, lng: 113.2685, address: '海珠区', region: '海珠区',
+      lat: 23.0994, lng: 113.3281, address: '赤岗东路', region: '海珠区',
       flavors: [], category: '粤菜', price: 1, scene: '一人食',
       dish: '巢皮肠粉',
       quote: '踩雷：皮厚、豉油死咸。',
