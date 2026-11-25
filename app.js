@@ -407,6 +407,7 @@
     if (!o.me.categories) o.me.categories = [];
     if (!o.visits) o.visits = [];
     if (!o.want) o.want = [];
+    if (!o.hidden) o.hidden = [];
     /* 老数据没有城市字段：店沿用原来的单一城市，博主跟着店走 */
     if (!o.city) o.city = (o.places && o.places[0] && o.places[0].city) || (window.SEED && window.SEED.city) || '';
     (o.places || []).forEach(function (p) { if (!p.city) p.city = o.city; });
@@ -462,7 +463,7 @@
   function uid(p) { return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   /* 展示层补充：区、逐菜。外部文件给，不落库。 */
   function extraOf(p) { return ((window.EXTRA || {})[p.id]) || {}; }
-  function regionOf(p) { return extraOf(p).region || ''; }
+  function regionOf(p) { return extraOf(p).region || p.region || ''; }
   function dishesOf(p) {
     var ex = extraOf(p).dishes;
     if (ex && ex.length) return ex;
@@ -630,6 +631,7 @@
       .filter(function (p) { return typeof p.lat === 'number' && typeof p.lng === 'number'; })
       /* 只算当前城市的店：否则在成都会看到 1200 公里外的本帮菜 */
       .filter(function (p) { return !S.city || cityOf(p) === S.city; })
+      .filter(function (p) { return (S.hidden || []).indexOf(p.id) < 0; })
       .filter(function (p) { return opt.ignoreKind || state.kind === 'all' || p.kind === state.kind; })
       .map(function (p) {
         var d = haversine(base, p);
@@ -925,6 +927,12 @@
             '<div class="b-tags"><i>打开后可用「用当前位置」定住</i></div></div></div>';
         }).join('') + '</div>' : '') +
 
+      '<div class="section-title">设置</div>' +
+      '<div style="padding:0 16px 8px">' +
+        '<button class="btn ghost" data-act="amapkey">高德 Key：' + (amapKey() ? '已填（点这里改）' : '还没填（点这里申请说明）') + '</button>' +
+        '<button class="btn ghost" data-act="hidden-list">不感兴趣的店：' + ((S.hidden || []).length) + ' 家</button>' +
+      '</div>' +
+
       '<div class="section-title">数据</div>' +
       '<div style="padding:0 16px 24px">' +
         '<button class="btn ghost" data-act="export">导出备份</button>' +
@@ -999,6 +1007,17 @@
             '<div class="row-meta">' + cityCount(c) + ' 家</div></div></div>';
       }).join('') : '') +
       '<div class="act-row"><button class="btn ghost" data-act="newcity">＋ 加一个城市</button></div>');
+  }
+
+  function openHidden() {
+    var hs = (S.hidden || []).map(placeById).filter(Boolean);
+    openSheet('<div class="sheet-h">不感兴趣的店</div>' +
+      '<div class="sheet-sub">这些不会出现在「附近」列表和地图上。</div>' +
+      (hs.length ? hs.map(function (p) {
+        return '<div class="row"><div class="row-main"><div class="row-name">' + esc(p.name) + '</div>' +
+          '<div class="row-meta">' + esc(cityOf(p)) + (p.cuisine ? ' · ' + esc(p.cuisine) : '') + '</div></div>' +
+          '<button class="mini" data-act="unhide" data-id="' + p.id + '">恢复</button></div>';
+      }).join('') : '<div class="empty">还没隐藏任何店。在店详情里点「不感兴趣」就行。</div>'));
   }
 
   function openNewCity() {
@@ -1225,6 +1244,7 @@
       (v && v.note ? '<div class="kv"><b>我的备注</b><span>' + esc(v.note) + '</span></div>' : '') +
       '<div class="act-row">' +
         '<button class="btn ghost" data-act="editplace" data-id="' + p.id + '">编辑</button>' +
+        '<button class="btn ghost" data-act="hide" data-id="' + p.id + '">不感兴趣</button>' +
         '<button class="btn danger" data-act="delplace" data-id="' + p.id + '">删除</button>' +
       '</div>'
     );
@@ -1411,6 +1431,9 @@
     return '<h3>' + (isEdit ? '编辑' : '收录一家') + '</h3>' +
       '<form id="f-place" data-id="' + (p.id || '') + '">' +
         '<label class="f"><span>店名 / 地点名</span><input type="text" name="name" required value="' + esc(p.name || '') + '" placeholder="视频里说的那家"></label>' +
+        '<div class="act-row" style="margin:-4px 0 10px"><button type="button" class="mini' + (amapKey() ? '' : ' ghost') + '" data-act="lookup">' +
+          (amapKey() ? '按店名查高德，自动填地址和坐标' : '按店名查高德（要先填 Key）') + '</button></div>' +
+        '<div id="amapList"></div>' +
         '<div class="row2">' +
           '<label class="f"><span>类型</span><select name="kind"><option value="eat"' + (p.kind !== 'spot' ? ' selected' : '') + '>吃</option><option value="spot"' + (p.kind === 'spot' ? ' selected' : '') + '>逛（景点）</option></select></label>' +
           '<label class="f"><span>城市</span><input type="text" name="city" value="' + esc(p.city || S.city || '') + '"></label>' +
@@ -1441,13 +1464,107 @@
         '<input type="hidden" name="srcRaw" value="' + esc(String((p.src && p.src.raw) || '').slice(0, 300)) + '">' +
         '<input type="hidden" name="lat" value="' + (p.lat || '') + '">' +
         '<input type="hidden" name="lng" value="' + (p.lng || '') + '">' +
+        '<input type="hidden" name="region" value="' + esc(p.region || '') + '">' +
         '<button type="button" class="btn ghost" data-act="use-loc">用当前位置</button>' +
         '<button class="btn primary" type="submit" style="margin-top:10px">' + (isEdit ? '保存' : '收进来') + '</button>' +
       '</form>';
   }
 
-  function openPlaceForm(p) {
-    openSheet(placeForm(p));
+  /* ================= 高德：按店名补地址和坐标 ================= */
+  function amapKey() { return String(S.amapKey || '').trim(); }
+
+  function jsonp(url, cb) {
+    var name = '__jp' + Math.floor(Math.random() * 1e6);
+    var s = document.createElement('script');
+    var done = false;
+    window[name] = function (data) {
+      if (done) return; done = true;
+      try { cb(data); } catch (e) { cb(null); }
+      try { delete window[name]; } catch (e) {}
+      if (s.parentNode) s.parentNode.removeChild(s);
+    };
+    s.onerror = function () {
+      if (done) return; done = true;
+      try { delete window[name]; } catch (e) {}
+      if (s.parentNode) s.parentNode.removeChild(s);
+      cb(null);
+    };
+    s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'callback=' + name;
+    (document.head || document.body).appendChild(s);
+  }
+
+  function lookup() {
+    var f = $('#f-place'); if (!f) return;
+    var el = f.elements;
+    var q = el.name.value.trim();
+    if (!q) { toast('先写个店名'); return; }
+    if (!amapKey()) {
+      openAmapKey();
+      toast('先填高德 Key，免费申请');
+      return;
+    }
+    var city = (el.city.value || S.city || '').trim();
+    var url = 'https://restapi.amap.com/v3/place/text?key=' + encodeURIComponent(amapKey()) +
+      '&keywords=' + encodeURIComponent(q) + '&offset=6&page=1&extensions=base' +
+      (city ? '&city=' + encodeURIComponent(city) + '&citylimit=true' : '');
+    var box = $('#amapList');
+    if (box) box.innerHTML = '<div class="hint">查高德…</div>';
+    jsonp(url, function (d) {
+      if (!d || String(d.status) !== '1' || !d.pois || !d.pois.length) {
+        var why = (d && d.info && d.info !== 'OK') ? d.info : '没搜到';
+        if (box) box.innerHTML = '<div class="hint">' + esc(why) + '。换个写法，或直接点地图。</div>';
+        return;
+      }
+      state.poi = d.pois;
+      if (box) {
+        box.innerHTML = '<div class="hint">点一条就填进去：</div>' + d.pois.map(function (p, i) {
+          var addr = (typeof p.address === 'string' ? p.address : '');
+          return '<div class="poi-row" data-act="pickpoi" data-i="' + i + '">' +
+            '<b>' + esc(p.name) + '</b>' +
+            '<span>' + esc((p.adname || '') + addr) + '</span>' +
+            '</div>';
+        }).join('');
+      }
+    });
+  }
+
+  function pickPoi(i) {
+    var p = (state.poi || [])[i]; if (!p) return;
+    var f = $('#f-place'); if (!f) return;
+    var el = f.elements;
+    var loc = String(p.location || '').split(',');
+    var lng = +loc[0], lat = +loc[1];
+    if (lat && lng) {
+      el.lat.value = lat; el.lng.value = lng;
+      if (el.lat.dispatchEvent) {} /* 保持简单：直接写隐藏域 */
+      var info = $('#pickinfo');
+      if (info) info.textContent = '已选：' + lat.toFixed(5) + ', ' + lng.toFixed(5);
+      if (window._pickMap) {
+        window._pickMap.c = { lat: lat, lng: lng };
+        window._pickMap.setMarks([{ lat: lat, lng: lng, cls: 'hot' }]);
+        window._pickMap.render();
+      }
+    }
+    var addr = (typeof p.address === 'string') ? p.address : '';
+    if (addr && !el.address.value) el.address.value = addr;
+    if (p.adname && el.region) el.region.value = p.adname;
+    if (!el.name.value) el.name.value = p.name;
+    var box = $('#amapList');
+    if (box) box.innerHTML = '<div class="hint">已填「' + esc(p.name) + '」，位置也选好了，直接保存。</div>';
+    toast('填好了');
+  }
+
+  function openAmapKey() {
+    openSheet('<div class="sheet-h">高德 Key</div>' +
+      '<div class="sheet-sub">用来「输入店名 → 自动查地址和坐标」。免费：<br>' +
+        '① 打开 lbs.amap.com → 注册/登录 → 控制台 → 应用管理 → 创建新应用<br>' +
+        '② 添加 Key，服务平台选「<b>Web服务</b>」（不是 JS API）<br>' +
+        '③ 把那一串字母数字粘到这里</div>' +
+      '<input id="amapKeyInput" class="paste city-input" type="text" value="' + esc(S.amapKey || '') + '" placeholder="32 位字母数字">' +
+      '<div class="act-row"><button class="btn primary" data-act="amapkey-save">保存</button></div>');
+  }
+
+  function openPlaceForm(p) {    openSheet(placeForm(p));
     var host = $('#pickmap');
     if (!host) return;
     var pin = (p && typeof p.lat === 'number') ? { lat: p.lat, lng: p.lng } : null;
@@ -1564,6 +1681,7 @@
       p.src = { platform: el.srcPlatform.value, raw: el.srcRaw.value };
     }
     p.address = el.address.value.trim();
+    p.region = el.region ? el.region.value.trim() : '';
     p.bloggerId = el.bloggerId ? el.bloggerId.value : '';
     var tv = {};
     DIMS.forEach(function (d) { tv[d.k] = num(+el['t_' + d.k].value, 2.5); });
@@ -1623,6 +1741,28 @@
       }
       if (act === 'kind') { state.kind = t.dataset.v; render(); return; }
       if (act === 'city') { openCity(); return; }
+      if (act === 'lookup') { lookup(); return; }
+      if (act === 'pickpoi') { pickPoi(+t.dataset.i); return; }
+      if (act === 'hide') {
+        S.hidden = S.hidden || [];
+        if (S.hidden.indexOf(id) < 0) S.hidden.push(id);
+        save(); closeSheet(); render(); toast('已隐藏，我的页能恢复');
+        return;
+      }
+      if (act === 'unhide') {
+        S.hidden = (S.hidden || []).filter(function (x) { return x !== id; });
+        save(); render(); openHidden(); toast('恢复了');
+        return;
+      }
+      if (act === 'hidden-list') { openHidden(); return; }
+      if (act === 'amapkey') { openAmapKey(); return; }
+      if (act === 'amapkey-save') {
+        var elK = $('#amapKeyInput');
+        S.amapKey = elK ? elK.value.trim() : '';
+        save(); closeSheet(); render();
+        toast(S.amapKey ? '高德 Key 已保存' : 'Key 已清空');
+        return;
+      }
       if (act === 'setcity') {
         S.city = v; save(); closeSheet(); state.mapView = null; render();
         toast('换到 ' + v + '（' + cityCount(v) + ' 家）');
@@ -1792,7 +1932,9 @@
     extraOf: extraOf, dishesOf: dishesOf, wantOf: wantOf,
     citiesOf: citiesOf, cityOf: cityOf, cityCount: cityCount, cityCenter: cityCenter,
     setCity: function (c) { S.city = c; save(); state.mapView = null; return ranked(); },
-    setTab: function (t) { state.tab = t; }
+    setTab: function (t) { state.tab = t; },
+    openPlaceForm: openPlaceForm, openHidden: openHidden, openAmapKey: openAmapKey,
+    lookup: lookup, pickPoi: pickPoi, amapKey: amapKey, jsonp: jsonp
   };
 })();
 

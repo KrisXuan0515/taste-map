@@ -47,6 +47,14 @@ button.city i { font-style: normal; font-size: 11px; opacity: .45; transform: tr
 .city-pick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
 .city-input { min-height: auto; padding: 12px 14px; font-size: 16px; }
 .city-row { cursor: pointer; }
+
+/* 高德候选列表 */
+.poi-row { display: flex; flex-direction: column; gap: 2px; padding: 11px 13px; margin-top: 8px;
+  background: #fff; border: 1px solid #E7DDCB; border-radius: 12px; cursor: pointer; }
+.poi-row:active { background: #FBF5E9; }
+.poi-row b { font-size: 15px; font-weight: 600; }
+.poi-row span { font-size: 12px; color: var(--muted); }
+.poi-row i { display: none; }
 .loc { margin-top: 2px; font-size: 12px; color: var(--muted); }
 .loc.warn { color: var(--accent); }
 
