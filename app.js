@@ -426,6 +426,14 @@
       }
     });
     syncSeed(o);
+    /* 一次性修订：这三家是自己找的，不是 nav 推的。只跑一次，之后你改了不会再动。 */
+    if (!o.fix_own) {
+      ['p_chengfeng', 'p_shengxiangting', 'p_laodifang'].forEach(function (id) {
+        var p = (o.places || []).filter(function (x) { return x.id === id; })[0];
+        if (p) p.bloggerId = 'b_me';
+      });
+      o.fix_own = 1;
+    }
     return o;
   }
 
@@ -1459,7 +1467,8 @@
         '<select name="t_' + d.k + '">' + tasteRowOpts(v) + '</select></label>';
     }).join('');
     var bopts = ['<option value="">不标博主</option>'].concat(S.bloggers.map(function (b) {
-      return '<option value="' + b.id + '"' + (p.bloggerId === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>';
+      var sel = (p.bloggerId === b.id) || (!isEdit && !p.bloggerId && b.id === 'b_me');
+      return '<option value="' + b.id + '"' + (sel ? ' selected' : '') + '>' + esc(b.name) + '</option>';
     })).join('');
 
     return '<h3>' + (isEdit ? '编辑' : '收录一家') + '</h3>' +
