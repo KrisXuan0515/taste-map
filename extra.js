@@ -55,5 +55,14 @@ window.EXTRA = {
   p_chaoshan: { region: '黄浦区', dishes: [
     { n: '吊龙', h: 3, note: '示例条目，涮八秒' },
     { n: '沙茶酱', h: 2, note: '自己调，花生香重' }
-  ] }
+  ] },
+  p_taotaoju: { region: '荔湾区', dishes: [
+    { n: '烧鹅', h: 3, note: '皮脆汁多，蘸酸梅酱' },
+    { n: '虾饺', h: 2, note: '皮薄，虾有弹' }
+  ] },
+  p_bingsheng: { region: '天河区', dishes: [
+    { n: '脆皮叉烧', h: 3, note: '焦边，甜口' },
+    { n: '捞起鱼生', h: 2, note: '要趁热油响声吃' }
+  ] },
+  p_cantontower: { region: '海珠区' }
 };

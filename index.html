@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -6,31 +6,31 @@
 <meta name="theme-color" content="#F8F5EC">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="口味地图">
-<title>口味地图</title>
+<meta name="apple-mobile-web-app-title" content="鍙ｅ懗鍦板浘">
+<title>鍙ｅ懗鍦板浘</title>
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 <div id="app">
   <div id="view"></div>
   <nav id="tabs">
     <button class="tab on" data-act="tab" data-tab="nearby">
-      <svg viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>附近
+      <svg viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>闄勮繎
     </button>
     <button class="tab" data-act="tab" data-tab="checkin">
-      <svg viewBox="0 0 24 24"><path d="M5 4h14v16l-7-4-7 4z"/><path d="M9 9h6M9 13h4"/></svg>打卡
+      <svg viewBox="0 0 24 24"><path d="M5 4h14v16l-7-4-7 4z"/><path d="M9 9h6M9 13h4"/></svg>鎵撳崱
     </button>
     <button class="tab" data-act="tab" data-tab="mine">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>我的
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>鎴戠殑
     </button>
   </nav>
 </div>
 <div id="sheet-root"></div>
 <div id="toast" class="toast"></div>
-<script src="data.js?v=3"></script>
-<script src="extra.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="data.js?v=4"></script>
+<script src="extra.js?v=4"></script>
+<script src="app.js?v=4"></script>
 <script>
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   navigator.serviceWorker.register('sw.js').catch(function () {});

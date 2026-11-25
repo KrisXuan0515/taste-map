@@ -407,6 +407,10 @@
     if (!o.me.categories) o.me.categories = [];
     if (!o.visits) o.visits = [];
     if (!o.want) o.want = [];
+    /* 老数据没有城市字段：店沿用原来的单一城市，博主跟着店走 */
+    if (!o.city) o.city = (o.places && o.places[0] && o.places[0].city) || (window.SEED && window.SEED.city) || '';
+    (o.places || []).forEach(function (p) { if (!p.city) p.city = o.city; });
+    (o.bloggers || []).forEach(function (b) { if (!b.city) b.city = o.city; });
     /* 旧数据是 1–5 星，转成「好吃 / 不好吃」 */
     o.visits.forEach(function (v) {
       if (!v.verdict) v.verdict = (num(v.rating, 4) >= 4) ? 'good' : 'bad';
@@ -591,11 +595,41 @@
     return s * t.mult * (1 + add);
   }
 
+  /* 城市的归属：店看 p.city，博主看 b.city，都没有就算当前城市 */
+  function cityOf(p) { return (p && p.city) || S.city || ''; }
+  function citiesOf() {
+    var seen = {}, out = [];
+    (S.places || []).forEach(function (p) {
+      var c = cityOf(p);
+      if (c && !seen[c]) { seen[c] = 1; out.push(c); }
+    });
+    (S.bloggers || []).forEach(function (b) {
+      var c = b.city;
+      if (c && !seen[c]) { seen[c] = 1; out.push(c); }
+    });
+    return out;
+  }
+  function cityCount(c) {
+    return (S.places || []).filter(function (p) { return cityOf(p) === c; }).length;
+  }
+  /* 没定位时，地图和距离以这个城市的店为中心 */
+  function cityCenter(c) {
+    var ps = (S.places || []).filter(function (p) {
+      return cityOf(p) === c && typeof p.lat === 'number' && typeof p.lng === 'number';
+    });
+    if (!ps.length) return null;
+    var lat = 0, lng = 0;
+    ps.forEach(function (p) { lat += p.lat; lng += p.lng; });
+    return { lat: lat / ps.length, lng: lng / ps.length };
+  }
+
   function ranked(opt) {
     opt = opt || {};
-    var base = state.loc || FALLBACK;
+    var base = state.loc || cityCenter(S.city) || FALLBACK;
     return S.places
       .filter(function (p) { return typeof p.lat === 'number' && typeof p.lng === 'number'; })
+      /* 只算当前城市的店：否则在成都会看到 1200 公里外的本帮菜 */
+      .filter(function (p) { return !S.city || cityOf(p) === S.city; })
       .filter(function (p) { return opt.ignoreKind || state.kind === 'all' || p.kind === state.kind; })
       .map(function (p) {
         var d = haversine(base, p);
@@ -717,7 +751,7 @@
 
     return '' +
       '<div class="hdr">' +
-        '<div class="hdr-top"><div><div class="city">' + esc(S.city || '未设城市') + '</div>' +
+        '<div class="hdr-top"><div><button class="city" data-act="city">' + esc(S.city || '选城市') + '<i>▾</i></button>' +
         '<div class="loc ' + (state.locStatus === 'ok' ? '' : 'warn') + '">' + locText() + '</div></div>' +
         '<div class="seg mode">' + modeBtn('local') + modeBtn('me') + modeBtn('half') + '</div></div>' +
         '<div class="mode-tip">' + MODES[state.mode].tip + '</div>' +
@@ -733,7 +767,14 @@
             (items.length > 1
               ? '<div class="sect">附近还有 ' + (items.length - 1) + ' 家</div>' + items.slice(1).map(card).join('')
               : '')
-          : '<div class="empty"><b>这里还没有推荐</b>点右下角的 + 把博主说的店收进来。<br>收录之后，到这个城市打开就能按距离看。</div>') +
+          : '<div class="empty"><b>' + esc(S.city || '这里') + ' 还没有推荐</b>点右下角的 + 把博主说的店收进来。<br>收录之后，到这个城市打开就能按距离看。' +
+            (function () {
+              var others = citiesOf().filter(function (c) { return c !== S.city; });
+              if (!others.length) return '';
+              return '<div class="city-pick">' + others.map(function (c) {
+                return '<button class="mini" data-act="setcity" data-v="' + esc(c) + '">切到 ' + esc(c) + '（' + cityCount(c) + ' 家）</button>';
+              }).join('') + '</div>';
+            })() + '</div>') +
       '</div>' +
       '<button class="fab" data-act="add" aria-label="收录一家">+</button>';
   }
@@ -744,7 +785,7 @@
     var items = ranked().slice(0, 40);
     var mv = state.mapView;
     var map = new MiniMap(host, {
-      center: mv ? mv.center : (state.loc || FALLBACK),
+      center: mv ? mv.center : (state.loc || cityCenter(S.city) || FALLBACK),
       zoom: mv ? mv.zoom : (state.loc ? 15 : 13),
       locate: locate,
       onView: function (c, z) { state.mapView = { center: c, zoom: z }; },
@@ -947,6 +988,26 @@
   }
 
   /* ================= 收录入口 ================= */
+  function openCity() {
+    var cs = citiesOf();
+    openSheet('<div class="sheet-h">在哪个城市</div>' +
+      '<div class="sheet-sub">换城市只影响「附近」看哪些店，不影响你的口味和打卡记录。</div>' +
+      (cs.length ? cs.map(function (c) {
+        return '<div class="row city-row" data-act="setcity" data-v="' + esc(c) + '">' +
+          '<div class="row-main"><div class="row-name">' + esc(c) +
+            (c === S.city ? '<span class="rdist">当前</span>' : '') + '</div>' +
+            '<div class="row-meta">' + cityCount(c) + ' 家</div></div></div>';
+      }).join('') : '') +
+      '<div class="act-row"><button class="btn ghost" data-act="newcity">＋ 加一个城市</button></div>');
+  }
+
+  function openNewCity() {
+    openSheet('<div class="sheet-h">加一个城市</div>' +
+      '<div class="sheet-sub">只写城市名。之后在这个城市收录的店，默认归到这儿。</div>' +
+      '<input id="cityName" class="paste city-input" type="text" placeholder="广州">' +
+      '<div class="act-row"><button class="btn primary" data-act="newcity-save">就用这个</button></div>');
+  }
+
   function openAdd() {
     openSheet('<div class="sheet-h">收一条推荐</div>' +
       '<div class="sheet-sub">最快的方式：在小红书 / 抖音点「分享 → 复制」，把文字粘进来，自动认出店名、菜、价格。位置再在地图上点一下。</div>' +
@@ -1414,6 +1475,7 @@
     openSheet('<h3>' + (isEdit ? '编辑博主' : '添加博主') + '</h3>' +
       '<form id="f-blogger" data-id="' + (b.id || '') + '">' +
         '<label class="f"><span>名字</span><input type="text" name="name" required value="' + esc(b.name || '') + '"></label>' +
+        '<label class="f"><span>主要在哪座城市</span><input type="text" name="city" value="' + esc(b.city || S.city || '') + '"></label>' +
         '<div class="row2">' +
           '<label class="f"><span>平台</span><select name="platform">' +
             ['抖音', '小红书', 'B站', '视频号', '公众号', '其他'].map(function (x) {
@@ -1529,6 +1591,7 @@
       S.bloggers.push(b);
     }
     b.name = name;
+    b.city = (el.city && el.city.value.trim()) || S.city || '';
     b.platform = el.platform.value;
     b.url = el.url.value.trim();
     b.note = el.note.value.trim();
@@ -1559,6 +1622,19 @@
         return;
       }
       if (act === 'kind') { state.kind = t.dataset.v; render(); return; }
+      if (act === 'city') { openCity(); return; }
+      if (act === 'setcity') {
+        S.city = v; save(); closeSheet(); state.mapView = null; render();
+        toast('换到 ' + v + '（' + cityCount(v) + ' 家）');
+        return;
+      }
+      if (act === 'newcity') { openNewCity(); return; }
+      if (act === 'newcity-save') {
+        var elN = $('#cityName'), nm = elN ? elN.value.trim() : '';
+        if (!nm) { toast('写个城市名'); return; }
+        S.city = nm; save(); closeSheet(); render(); toast('换到 ' + nm);
+        return;
+      }
       if (act === 'place') { openPlace(id); return; }
       if (act === 'rate') { openRate(id); return; }
       if (act === 'add') { openAdd(); return; }
@@ -1714,6 +1790,8 @@
     getS: function () { return S; },
     openPlace: openPlace, recordVerdict: recordVerdict, toggleWant: toggleWant,
     extraOf: extraOf, dishesOf: dishesOf, wantOf: wantOf,
+    citiesOf: citiesOf, cityOf: cityOf, cityCount: cityCount, cityCenter: cityCenter,
+    setCity: function (c) { S.city = c; save(); state.mapView = null; return ranked(); },
     setTab: function (t) { state.tab = t; }
   };
 })();

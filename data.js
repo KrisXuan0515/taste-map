@@ -20,6 +20,7 @@ window.SEED = {
     {
       id: 'b_da',
       name: '达哥',
+      city: '上海',
       platform: '抖音',
       url: '',
       color: '#C1492D',
@@ -32,6 +33,7 @@ window.SEED = {
     {
       id: 'b_may',
       name: '阿May',
+      city: '上海',
       platform: '小红书',
       url: '',
       color: '#2F7D5D',
@@ -44,6 +46,7 @@ window.SEED = {
     {
       id: 'b_pang',
       name: '小胖探城',
+      city: '上海',
       platform: '抖音',
       url: '',
       color: '#B5651D',
@@ -52,6 +55,19 @@ window.SEED = {
       price: 2,
       note: '示例博主：重口，专挑宵夜。',
       hits: { good: 0, total: 1 }
+    },
+    {
+      id: 'b_nav',
+      name: 'nav',
+      city: '广州',
+      platform: '视频',
+      url: '',
+      color: '#1F6FA8',
+      flavors: ['粤菜', '镬气'],
+      categories: ['粤菜', '烧腊'],
+      price: 2,
+      note: '广州。示例占位，等真数据。',
+      hits: { good: 0, total: 0 }
     }
   ],
   places: [
@@ -198,6 +214,30 @@ window.SEED = {
       dish: '古刹 · 商圈',
       quote: '「香火旺，隔壁就是商场，逛吃一体。」',
       sourceUrl: '', bloggerId: ''
+    },
+    {
+      id: 'p_taotaoju', kind: 'eat', name: '陶陶居（总店）', city: '广州',
+      lat: 23.1189, lng: 113.2472, address: '第十甫路 20 号',
+      flavors: [], category: '粤菜', price: 2, scene: '聚餐',
+      dish: '烧鹅 · 虾饺',
+      quote: '「早茶排队到十点，烧鹅皮还是脆的。」',
+      sourceUrl: '', bloggerId: 'b_nav'
+    },
+    {
+      id: 'p_bingsheng', kind: 'eat', name: '炳胜品味', city: '广州',
+      lat: 23.1332, lng: 113.3272, address: '天河路 208 号',
+      flavors: [], category: '粤菜', price: 3, scene: '聚餐',
+      dish: '脆皮叉烧 · 捞起鱼生',
+      quote: '「镬气足，叉烧带焦边。」',
+      sourceUrl: '', bloggerId: 'b_nav'
+    },
+    {
+      id: 'p_cantontower', kind: 'spot', name: '广州塔', city: '广州',
+      lat: 23.1066, lng: 113.3245, address: '阅江西路 222 号',
+      flavors: [], category: '', price: 0, scene: '',
+      dish: '小蛮腰 · 夜景',
+      quote: '「傍晚上塔，下来正好吃饭。」',
+      sourceUrl: '', bloggerId: ''
     }
   ]
 };
@@ -213,7 +253,8 @@ window.SEED = {
     p_xiaoyang: [1, '沪式'], p_jiajia: [3, '本帮'], p_aniang: [3, '本帮'],
     p_weixiangzhai: [3, '本帮'], p_laofandian: [3, '本帮'], p_lvbolang: [3, '本帮'],
     p_chuanwei: [1, '川'], p_chaoshan: [1, '潮汕'],
-    p_bund: [3, '地标'], p_yuyuan: [3, '地标'], p_wukang: [3, '地标'], p_jingan: [3, '地标']
+    p_bund: [3, '地标'], p_yuyuan: [3, '地标'], p_wukang: [3, '地标'], p_jingan: [3, '地标'],
+    p_taotaoju: [3, '粤菜'], p_bingsheng: [3, '粤菜'], p_cantontower: [3, '地标']
   };
   window.SEED.places.forEach(function (p) {
     var x = LT[p.id];
@@ -232,7 +273,8 @@ window.TASTE_BY_CUISINE = {
   '本帮': [0, 0, 3, 3.5, 0.5, 4, 2, 2, 1],
   '川': [4, 2.5, 1, 3.5, 1.5, 3, 2, 2.5, 1.5],
   '潮汕': [0.5, 0, 0.5, 3, 1, 1, 4.5, 1, 1],
-  '沪式': [0, 0, 2, 4, 1, 3.5, 2, 2, 0.5]
+  '沪式': [0, 0, 2, 4, 1, 3.5, 2, 2, 0.5],
+  '粤菜': [0, 0, 2.5, 3, 0.5, 2.5, 4, 3, 1]
 };
 
 /* 单店覆盖：让 18 家在口味轴上真的分得开 */
@@ -250,5 +292,7 @@ window.TASTE_PLACES = {
   p_lvbolang:     [0, 0, 4.5, 2.5, 0.5, 2, 2, 1, 0.5],    /* 点心，甜口 */
   p_xiaoyang:     [0, 0, 2, 4.5, 1, 4, 2, 2, 0.5],
   p_chuanwei:     [4.5, 3, 1, 4, 2, 4, 2, 3, 2.5],        /* 辣 */
-  p_chaoshan:     [0.5, 0, 0.5, 3, 1, 1, 5, 1, 1.5]        /* 追鲜 */
+  p_chaoshan:     [0.5, 0, 0.5, 3, 1, 1, 5, 1, 1.5],       /* 追鲜 */
+  p_taotaoju:     [0, 0, 3, 3, 0.5, 2.5, 4, 3, 1],         /* 广州早茶，偏甜鲜 */
+  p_bingsheng:    [0, 0, 2, 3.5, 0.5, 3, 4, 3.5, 1]        /* 镬气重 */
 };
