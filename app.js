@@ -1152,9 +1152,10 @@
   }
 
   function openAdd() {
-    openSheet('<div class="sheet-h">收一条推荐</div>' +
-      '<div class="sheet-sub">最快的方式：在小红书 / 抖音点「分享 → 复制」，把文字粘进来，自动认出店名、菜、价格。位置再在地图上点一下。</div>' +
-      '<div class="act-row"><button class="btn primary" data-act="import">粘贴一条（推荐）</button></div>' +
+    openSheet('<div class="sheet-h">记一家</div>' +
+      '<div class="sheet-sub">刷视频看到一家，直接打店名。高德帮你补坐标和地址，点一下就存进来了。</div>' +
+      '<div class="act-row"><button class="btn primary" data-act="quick">快速记一家（只打店名）</button></div>' +
+      '<div class="act-row"><button class="btn ghost" data-act="import">粘贴一条链接/文案</button></div>' +
       '<div class="act-row"><button class="btn ghost" data-act="batch">批量粘贴（一次十几家）</button></div>' +
       '<div class="act-row"><button class="btn ghost" data-act="manual">空白手填</button></div>' +
       '<div class="act-row"><button class="btn ghost" data-act="addblogger">先加一位博主</button></div>');
@@ -1255,6 +1256,77 @@
       });
       toast(r.name ? '认出来了：' + r.name + '（位置还得点一下）' : '没认出店名，手动填一下');
     }, 140);
+  }
+
+  /* ================= 快速记一家：只打店名，点一下就存 ================= */
+  function openQuick() {
+    openSheet('<div class="sheet-h">快速记一家</div>' +
+      '<div class="sheet-sub">刷到店就把店名打进来（或粘进来），点一下高德的结果就存好了。坐标、地址、区自动填，不用填表。</div>' +
+      '<input id="quickBox" class="city-input" placeholder="店名，比如 诚锋石磨肠粉" autocomplete="off" enterkeyhint="search">' +
+      '<div class="act-row"><button class="btn primary" data-act="quick-go">查高德</button></div>' +
+      '<div id="quickList"></div>' +
+      '<div class="hint">存完弹层不关，可以直接接着打下一家，连记不用来回点。</div>');
+  }
+
+  function quickGo() {
+    var b = $('#quickBox');
+    var q = b ? String(b.value || '').trim() : '';
+    if (!q) { toast('先写个店名'); return; }
+    if (!amapKey()) { openAmapKey(); toast('先填高德 Key，就一次'); return; }
+    var box = $('#quickList');
+    if (box) box.innerHTML = '<div class="hint">查高德…</div>';
+    var url = 'https://restapi.amap.com/v3/place/text?key=' + encodeURIComponent(amapKey()) +
+      '&keywords=' + encodeURIComponent(q) + '&offset=6&page=1&extensions=base' +
+      '&city=' + encodeURIComponent(S.city) + '&citylimit=true';
+    jsonp(url, function (d) {
+      if (!d || String(d.status) !== '1' || !d.pois || !d.pois.length) {
+        var info = (d && d.info) || '';
+        var why = info === 'USERKEY_PLAT_NOMATCH'
+          ? '高德 Key 的类型不对，要去控制台选「Web服务」'
+          : info === 'INVALID_USER_KEY' ? 'Key 无效，或者刚建好还没生效'
+          : info === 'CUQPS_HAS_EXCEEDED_THE_LIMIT' ? '查太快了，等两秒再点'
+          : info && info !== 'OK' ? info : '没搜到，换个写法';
+        if (box) box.innerHTML = '<div class="hint">' + esc(why) + '</div>';
+        return;
+      }
+      state.quick = d.pois;
+      if (box) {
+        box.innerHTML = d.pois.map(function (p, i) {
+          var addr = (typeof p.address === 'string' ? p.address : '');
+          return '<div class="poi-row" data-act="quick-pick" data-i="' + i + '">' +
+            '<b>' + esc(p.name) + '</b>' +
+            '<span>' + esc((p.adname || '') + addr) + '</span>' +
+            '</div>';
+        }).join('');
+      }
+    });
+  }
+
+  /* 点一条就落库：不再走表单。要补口味/改来源再进详情。 */
+  function quickPick(i) {
+    var p = (state.quick || [])[i];
+    if (!p) return;
+    var loc = String(p.location || '').split(',');
+    var lng = +loc[0], lat = +loc[1];
+    if (!lat || !lng) { toast('这条没有坐标，换个结果'); return; }
+    var name = String(p.name || '').trim();
+    if (!name) { toast('这条没名字，换个结果'); return; }
+    var cat = guessCat(name);
+    var taste = (window.TASTE_BY_CUISINE || {})[cat] || [1, 1, 2, 2.5, 1, 2, 2.5, 2, 1];
+    S.places.push({
+      id: uid('p'), kind: 'eat', name: name, city: S.city,
+      lat: lat, lng: lng,
+      address: (typeof p.address === 'string' ? p.address : ''), region: p.adname || '',
+      flavors: [], category: cat, cuisine: cat, price: 2, scene: '一人食',
+      dish: '', quote: '', sourceUrl: '', own: true, taste: arrToVec(taste)
+    });
+    save(); render();
+    toast('记下了：' + name + '（' + PRICE_LBL[2] + '先按这个猜的，能改）');
+    var b = $('#quickBox');
+    if (b) { b.value = ''; if (b.focus) b.focus(); }
+    var box = $('#quickList');
+    if (box) box.innerHTML = '<div class="hint">已经存好，接着打下一家。</div>';
+    state.quick = [];
   }
 
   /* ================= 批量粘贴：一次多家 ================= */
@@ -1384,7 +1456,7 @@
         address: it.address || '', region: it.region || '',
         flavors: [], category: cat, cuisine: cat, price: it.price || 2, scene: '一人食',
         dish: it.dish || '', quote: it.dish ? '' : String(it.text || '').slice(0, 60),
-        sourceUrl: it.url || '', own: true, taste: taste.slice()
+        sourceUrl: it.url || '', own: true, taste: arrToVec(taste)
       });
     });
     save(); state.batch = null; closeSheet(); render();
@@ -2053,6 +2125,9 @@
       if (act === 'add') { openAdd(); return; }
       if (act === 'manual') { closeSheet(); setTimeout(function () { openPlaceForm(null); }, 120); return; }
       if (act === 'import') { openImport(); return; }
+      if (act === 'quick') { openQuick(); return; }
+      if (act === 'quick-go') { quickGo(); return; }
+      if (act === 'quick-pick') { quickPick(+t.dataset.i); return; }
       if (act === 'batch') { openBatch(); return; }
       if (act === 'batch-parse') { batchParse(); return; }
       if (act === 'batch-toggle') { batchToggle(+t.dataset.i); return; }
@@ -2193,6 +2268,8 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') closeSheet();
+    /* 快速记一家：回车就查，手机键盘走「搜索」键 */
+    if (e.key === 'Enter' && e.target && e.target.id === 'quickBox') { e.preventDefault(); quickGo(); }
   });
 
   var rt;
@@ -2223,7 +2300,8 @@
     lookup: lookup, pickPoi: pickPoi, amapKey: amapKey, jsonp: jsonp, syncSeed: syncSeed,
     submitPlace: submitPlace, authorOf: authorOf, ownOf: ownOf,
     openBatch: openBatch, batchParse: batchParse, batchToggle: batchToggle,
-    batchImport: batchImport, splitBatch: splitBatch, guessCat: guessCat
+    batchImport: batchImport, splitBatch: splitBatch, guessCat: guessCat,
+    openQuick: openQuick, quickGo: quickGo, quickPick: quickPick
   };
 })();
 
