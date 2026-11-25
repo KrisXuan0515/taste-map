@@ -125,6 +125,15 @@ S.mood = { dims, intent, scene, hungry, price, at }   临时，只有今天有�
 
 技术上是 JSONP（`callback=` 参数）拿到数据，所以不需要后端、不受跨域限制；Key 只存在你自己手机的 localStorage 里。
 
+## 店的来源：博主推荐 / 自己找的
+
+一家店只有两种来源，数据上是两个字段：
+
+- `bloggerId: 'b_da'` —— 某位博主推荐的，会算他的命中率，详情里显示「1 位推荐者」。
+- `own: true` —— **自己找的**，不进博主列表、不算命中率，详情里显示「来源：我自己」，并在「我的 → 我找的店」单独列出。
+
+收录表单里的「谁推荐的」第一项永远是「我自己」，因为自己找的店最多。这块以前是借一个假博主 `b_me` 装的，v8 拆掉了：老存档里挂 `b_me` 的店会在 `migrate()` 里自动改成 `own: true`，并把假博主从列表里摘掉。
+
 ## 不想看到的店：不感兴趣
 
 店详情里点「不感兴趣」，它就从这个城市的列表和地图上消失，**但数据还在**。我的页 → 设置 → 「不感兴趣的店」可以恢复。
@@ -145,12 +154,14 @@ S.mood = { dims, intent, scene, hungry, price, at }   临时，只有今天有�
 { id, name, platform, color, price, note, hits: { total, good } }
 // 一家店 / 一个景点
 { id, name, kind: 'eat' | 'spot', lat, lng, city, cuisine, local, taste: {...},
-  categories: [], price, scenes: [], dish, quote, bloggerId, stay }
+  categories: [], price, scenes: [], dish, quote, bloggerId, own, stay }
 // 一次打卡
-{ id, placeId, rating, at, note }
+{ id, placeId, verdict: 'good' | 'bad', rating, at, note }
 ```
 
 数据在 `localStorage['tasteMap.v2']`（旧版 `v1` 会自动迁移）。「我的」里可以导出 JSON 备份。
+
+**数据是会真丢的**：数据只在这台手机的浏览器里，iOS 的 Safari 会清掉「一阵子没打开过的网站」的本地存储，清完打卡记录就没了。所以导出那一刻会记 `lastBackup`，超过 7 天没导出，「附近」页顶上会提醒再导一份。导出的文件请存进「文件」App，别只留在下载列表。
 
 ## 文件
 
@@ -182,4 +193,7 @@ icon.svg      图标
 - [ ] 单条链接解析（先做小红书）
 - [ ] 打卡评分回写命中率的可视化
 - [x] 好吃/不好吃 两档代替五颗星，接进命中率
-- [ ] 多城市切换
+- [x] 多城市切换
+- [x] 自己找的店不再借博主的壳（`own`）
+- [x] 备份提醒（iOS 会清本地存储）
+- [ ] 用高德 Key 把广州三家的坐标核准

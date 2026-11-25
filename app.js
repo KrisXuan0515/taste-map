@@ -426,14 +426,13 @@
       }
     });
     syncSeed(o);
-    /* 一次性修订：这三家是自己找的，不是 nav 推的。只跑一次，之后你改了不会再动。 */
-    if (!o.fix_own) {
-      ['p_chengfeng', 'p_shengxiangting', 'p_laodifang'].forEach(function (id) {
-        var p = (o.places || []).filter(function (x) { return x.id === id; })[0];
-        if (p) p.bloggerId = 'b_me';
-      });
-      o.fix_own = 1;
-    }
+    /* 「我自己」以前借博主的壳（b_me）。现在改成正式的来源标记 p.own：
+       老存档里挂 b_me 的店改成 own=true，再把那个假博主从列表里摘掉。 */
+    (o.places || []).forEach(function (p) {
+      if (p.bloggerId === 'b_me') { p.own = true; p.bloggerId = ''; }
+      p.own = !!p.own;
+    });
+    o.bloggers = (o.bloggers || []).filter(function (b) { return b.id !== 'b_me'; });
     return o;
   }
 
@@ -496,6 +495,15 @@
   function bloggerById(id) {
     for (var i = 0; i < S.bloggers.length; i++) if (S.bloggers[i].id === id) return S.bloggers[i];
     return null;
+  }
+  /* 店的来源只有两种：博主推荐的，和自己找的。
+     自己找的不进博主列表、不算命中率，只算你自己的清单。 */
+  function ownOf(p) { return !!(p && p.own); }
+  function authorOf(p) {
+    if (ownOf(p)) return { own: true, name: '我自己', color: '#6B6355', ch: '我', platform: '自己找的', blogger: null };
+    var b = bloggerById(p && p.bloggerId);
+    if (!b) return null;
+    return { own: false, name: b.name, color: b.color, ch: String(b.name || '?').slice(0, 1), platform: b.platform || '', blogger: b };
   }
   function visitOf(id) {
     for (var i = 0; i < S.visits.length; i++) if (S.visits[i].placeId === id) return S.visits[i];
@@ -586,6 +594,12 @@
   function today() {
     var d = new Date();
     return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+  }
+  /* 多久没备份了。-1 = 从来没导过。
+     iOS 的 Safari 会把久不打开的网站的本地存储清掉，数据是会真丢的。 */
+  function backupDays() {
+    if (!S.lastBackup) return -1;
+    return Math.floor((Date.now() - S.lastBackup) / 86400000);
   }
   /* 「今儿这顿」：只对今天有效。人本来就会变，所以它和长期画像分开存。 */
   function moodOf() {
@@ -716,13 +730,13 @@
 
   /* 头牌：第一家占满一屏宽，像杂志封面。没有照片，就用店名的第一个字当封面字。 */
   function hero(it, rank) {
-    var p = it.p, b = bloggerById(p.bloggerId), v = visitOf(p.id), t = it.t;
+    var p = it.p, a = authorOf(p), v = visitOf(p.id), t = it.t;
     var tags = [];
     if (p.local === 3) tags.push('本地招牌');
     if (p.cuisine) tags.push(p.cuisine);
     var ch = String(p.name || '').replace(/^[（(].*?[)）]/, '').slice(0, 1);
     return '<article class="hero" data-act="place" data-id="' + p.id + '">' +
-      '<div class="hero-pic" style="background:' + ((b && b.color) || '#2E6B4F') + '">' +
+      '<div class="hero-pic" style="background:' + ((a && a.color) || '#2E6B4F') + '">' +
         '<span class="hero-ch">' + esc(ch) + '</span>' +
         '<span class="hero-no">No.' + (rank < 10 ? '0' + rank : rank) + '</span>' +
         '<span class="hero-dist">' + distText(it.d) + '</span>' +
@@ -731,8 +745,8 @@
       '<div class="hero-body">' +
         (tags.length ? '<div class="c-tags">' + tags.map(function (x) { return '<i>' + esc(x) + '</i>'; }).join('') + '</div>' : '') +
         (p.quote ? '<p class="hero-quote">' + esc(p.quote) + '</p>' : '') +
-        '<div class="hero-rec">' + avatarHTML(b) +
-          '<span class="hr-name">' + (b ? esc(b.name) : '未标博主') + '</span>' +
+        '<div class="hero-rec">' + avatarHTML(a) +
+          '<span class="hr-name">' + (a ? esc(a.name) : '未标来源') + '</span>' +
           '<span class="hr-sep"></span><span>' + priceHTML(p) + '</span>' +
           (regionOf(p) ? '<span class="hr-sep"></span><span>' + esc(regionOf(p)) + '</span>' : '') +
         '</div>' +
@@ -748,9 +762,9 @@
   }
 
   function card(it) {
-    var p = it.p, b = bloggerById(p.bloggerId), v = visitOf(p.id), t = it.t;
+    var p = it.p, v = visitOf(p.id), t = it.t;
     return '<div class="row" data-act="place" data-id="' + p.id + '">' +
-      avatarHTML(b) +
+      avatarHTML(authorOf(p)) +
       '<div class="row-main">' +
         '<div class="row-name">' + esc(p.name) + '<span class="rdist">' + distText(it.d) + '</span></div>' +
         '<div class="row-meta">' +
@@ -778,6 +792,16 @@
         '</div></div>';
     } else if (state.locStatus === 'pending') {
       banner = '<div class="banner">正在定位… 拿到位置后距离会自动刷新。</div>';
+    }
+    /* 备份提醒：数据只在你手机的浏览器里，Safari 会清久不用的网站。
+       只在「确实有你自己的东西」时提醒，示例数据丢了无所谓。 */
+    var bd = backupDays();
+    var mine = (S.visits || []).length + (S.places || []).filter(function (p) { return p.own; }).length;
+    if (mine > 0 && (bd < 0 || bd >= 7)) {
+      banner += '<div class="banner">' +
+        (bd < 0 ? '还没备份过。' : '上次备份是 ' + bd + ' 天前。') +
+        ' iPhone 的 Safari 会把久不打开的网站的数据清掉，你记的「好吃 / 不好吃」会一起没。' +
+        '<div class="banner-act"><button class="mini" data-act="export">导出备份</button></div></div>';
     }
     var promo = (S.me && !S.me.quizAt)
       ? '<div class="promo" data-act="quiz">还没做过口味测试 · 花 1 分钟，之后「跟我口味」才准 <b>开始 →</b></div>' : '';
@@ -848,10 +872,10 @@
     });
     var marks = items.map(function (it) {
       var sim = it.t.sim;
-      var b = bloggerById(it.p.bloggerId);
+      var a = authorOf(it.p);
       return {
         id: it.p.id, lat: it.p.lat, lng: it.p.lng, label: it.p.name,
-        av: { color: (b && b.color) || '#B9AE9D', ch: b ? String(b.name || '?').slice(0, 1) : '·' },
+        av: { color: (a && a.color) || '#B9AE9D', ch: a ? a.ch : '·' },
         cls: it.p.kind === 'spot' ? 'spot' : (sim > 0.78 ? 'hot' : sim > 0.6 ? 'warm' : '')
       };
     });
@@ -922,6 +946,7 @@
     var taste = me.taste || {};
     var ty = typeOf(taste);
     var unlocated = S.places.filter(function (p) { return typeof p.lat !== 'number'; });
+    var owned = S.places.filter(function (p) { return ownOf(p); });
     var bloggerHTML = S.bloggers.map(function (b) {
       return '<div class="b-item" data-act="editblogger" data-id="' + b.id + '">' +
         '<span class="avatar" style="background:' + b.color + '">' + esc(b.name.slice(0, 1)) + '</span>' +
@@ -958,6 +983,20 @@
         SCENES.map(function (f) { return chipToggle('me-scene', (me.scenes || []).indexOf(f) >= 0, f); }).join('') +
       '</div>' +
 
+      '<div class="section-title">我找的店 · ' + owned.length + ' 家</div>' +
+      (owned.length
+        ? '<div class="list">' + owned.map(function (p) {
+            var v = visitOf(p.id);
+            return '<div class="b-item" data-act="place" data-id="' + p.id + '">' +
+              avatarHTML(authorOf(p)) +
+              '<div class="b-info"><div class="b-name">' + esc(p.name) +
+                (regionOf(p) ? '<small>' + esc(regionOf(p)) + '</small>' : '') + '</div>' +
+                '<div class="b-tags"><i>' + (v ? (v.verdict === 'bad' ? '踩雷' : '好吃') : '还没吃') + '</i>' +
+                (p.cuisine ? '<i>' + esc(p.cuisine) + '</i>' : '') + '</div></div>' +
+            '</div>';
+          }).join('') + '</div>'
+        : '<div class="empty" style="padding:0 16px">还没有。收录时「谁推荐的」选「我自己」就行。</div>') +
+
       '<div class="section-title">博主 · ' + S.bloggers.length + ' 位</div>' +
       '<div class="list">' + (bloggerHTML || '<div class="empty">还没有博主。</div>') + '</div>' +
       '<div style="padding:0 16px"><button class="btn ghost" data-act="addblogger">+ 添加博主</button></div>' +
@@ -976,6 +1015,9 @@
       '</div>' +
 
       '<div class="section-title">数据</div>' +
+      '<div class="hint" style="padding:0 16px 6px">上次备份：' +
+        (backupDays() < 0 ? '从没备份过' : backupDays() === 0 ? '今天' : backupDays() + ' 天前') +
+        '。数据只存在这台手机的浏览器里，Safari 会清久不用的网站。</div>' +
       '<div style="padding:0 16px 24px">' +
         '<button class="btn ghost" data-act="export">导出备份</button>' +
         '<button class="btn ghost" data-act="import">导入备份</button>' +
@@ -1212,23 +1254,10 @@
   function openPlace(id) {
     var p = placeById(id);
     if (!p) return;
-    var b = bloggerById(p.bloggerId);
+    var a = authorOf(p);
     var d = state.loc ? haversine(state.loc, p) : null;
     var v = visitOf(p.id);
     var t = tasteOf(p);
-    var rows = [];
-    if (p.address) rows.push(['地址', esc(p.address)]);
-    rows.push(['距离', d != null ? distText(d) : '未定位']);
-    if (p.cuisine) rows.push(['菜系', esc(p.cuisine)]);
-    rows.push(['本地度', ['', '到处都有', '本地人常去', '本地招牌'][p.local || 2]]);
-    if (p.price) rows.push(['人均', priceText(p.price)]);
-    if ((p.flavors || []).length) rows.push(['味型', p.flavors.map(esc).join(' · ')]);
-    if (p.dish) rows.push(['招牌', esc(p.dish)]);
-    rows.push(['博主', b ? esc(b.name) + '（命中 ' + Math.round(relOf(b) * 100) + '%）' : '未标注']);
-    if (p.sourceUrl) {
-      rows.push(['来源', '<a href="' + esc(p.sourceUrl) + '" target="_blank" rel="noopener">' +
-        esc((p.src && p.src.platform) || '打开原文') + '</a>']);
-    }
 
     var ds = dishesOf(p);
     var dishHTML = ds.length
@@ -1261,11 +1290,13 @@
         '<button class="tb ' + (wantOf(p.id) ? 'on want' : '') + '" data-act="want" data-id="' + p.id + '">稍后去吃</button>' +
       '</div>' +
       '<button class="btn primary wide" data-act="nav" data-id="' + p.id + '">一键导航</button>' +
-      (b ? '<div class="rec">' +
-        '<div class="rec-h">1 位推荐者</div>' +
-        '<div class="rec-top">' + avatarHTML(b) + '<b>' + esc(b.name) + '</b>' +
-          '<span class="rec-src">' + esc(b.platform || '') + '</span>' +
-          '<span class="rec-hit">' + (b.hits && b.hits.total ? '命中 ' + Math.round(relOf(b) * 100) + '%' : '还没验证') + '</span>' +
+      (a ? '<div class="rec">' +
+        '<div class="rec-h">' + (a.own ? '来源' : '1 位推荐者') + '</div>' +
+        '<div class="rec-top">' + avatarHTML(a) + '<b>' + esc(a.name) + '</b>' +
+          '<span class="rec-src">' + esc(a.platform || '') + '</span>' +
+          '<span class="rec-hit">' + (a.own
+            ? (v ? (v.verdict === 'bad' ? '你记成不好吃' : '你记成好吃') : '还没吃过')
+            : (a.blogger.hits && a.blogger.hits.total ? '命中 ' + Math.round(relOf(a.blogger) * 100) + '%' : '还没验证')) + '</span>' +
         '</div>' +
         (p.quote ? '<p class="rec-quote">' + esc(p.quote) + '</p>' : '') +
         ((p.flavors || []).length || p.cuisine
@@ -1466,10 +1497,13 @@
       return '<label class="f tcell"><span>' + d.n + '</span>' +
         '<select name="t_' + d.k + '">' + tasteRowOpts(v) + '</select></label>';
     }).join('');
-    var bopts = ['<option value="">不标博主</option>'].concat(S.bloggers.map(function (b) {
-      var sel = (p.bloggerId === b.id) || (!isEdit && !p.bloggerId && b.id === 'b_me');
-      return '<option value="' + b.id + '"' + (sel ? ' selected' : '') + '>' + esc(b.name) + '</option>';
-    })).join('');
+    /* 谁推荐的：第一项永远是「我自己」。自己找的店最常见，放最前面当默认。 */
+    var selfSel = !!p.own || (!isEdit && !p.bloggerId);
+    var bopts = ['<option value="self"' + (selfSel ? ' selected' : '') + '>我自己（自己找的）</option>']
+      .concat(['<option value=""' + (!selfSel && !p.bloggerId ? ' selected' : '') + '>不标来源</option>'])
+      .concat(S.bloggers.map(function (b) {
+        return '<option value="' + b.id + '"' + (!p.own && p.bloggerId === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>';
+      })).join('');
 
     return '<h3>' + (isEdit ? '编辑' : '收录一家') + '</h3>' +
       '<form id="f-place" data-id="' + (p.id || '') + '">' +
@@ -1493,7 +1527,7 @@
             '<option value="1"' + (p.local === 1 ? ' selected' : '') + '>到处都有</option>' +
           '</select></label>' +
         '</div>' +
-        '<label class="f"><span>推荐人</span><select name="bloggerId">' + bopts + '</select></label>' +
+        '<label class="f"><span>谁推荐的</span><select name="bloggerId">' + bopts + '</select></label>' +
         '<label class="f"><span>招牌菜</span><input type="text" name="dish" value="' + esc(p.dish || '') + '" placeholder="红烧肉、生煎"></label>' +
         '<div class="field"><span>口味（这家有多辣 / 多甜 / 多咸…）</span><div class="tgrid">' + tasteCells + '</div></div>' +
         '<label class="f"><span>博主原话 / 备注</span><textarea name="quote" placeholder="他原话怎么说的，抄一句最有用的">' + esc(p.quote || '') + '</textarea></label>' +
@@ -1725,7 +1759,9 @@
     }
     p.address = el.address.value.trim();
     p.region = el.region ? el.region.value.trim() : '';
-    p.bloggerId = el.bloggerId ? el.bloggerId.value : '';
+    var srcBy = el.bloggerId ? el.bloggerId.value : '';
+    p.own = srcBy === 'self';
+    p.bloggerId = p.own ? '' : srcBy;
     var tv = {};
     DIMS.forEach(function (d) { tv[d.k] = num(+el['t_' + d.k].value, 2.5); });
     p.taste = tv;
@@ -1896,6 +1932,11 @@
         a.download = 'taste-map-' + new Date().toISOString().slice(0, 10) + '.json';
         a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+        /* iOS 的 Safari 会把「一阵子不用的网站」的本地存储清掉，
+           导出的那一刻记个时间，下次打开超过 7 天就提醒再导一份。 */
+        S.lastBackup = Date.now();
+        save();
+        toast('导出了。存到「文件」里，别只留在下载列表。');
         return;
       }
       if (act === 'import') { $('#importFile').click(); return; }
@@ -1979,7 +2020,8 @@
     setCity: function (c) { S.city = c; save(); state.mapView = null; return ranked(); },
     setTab: function (t) { state.tab = t; },
     openPlaceForm: openPlaceForm, openHidden: openHidden, openAmapKey: openAmapKey,
-    lookup: lookup, pickPoi: pickPoi, amapKey: amapKey, jsonp: jsonp, syncSeed: syncSeed
+    lookup: lookup, pickPoi: pickPoi, amapKey: amapKey, jsonp: jsonp, syncSeed: syncSeed,
+    submitPlace: submitPlace, authorOf: authorOf, ownOf: ownOf
   };
 })();
 

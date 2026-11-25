@@ -68,19 +68,6 @@ window.SEED = {
       price: 2,
       note: '广州。示例占位，等真数据。',
       hits: { good: 0, total: 0 }
-    },
-    {
-      id: 'b_me',
-      name: '我自己',
-      city: '',
-      platform: '自己踩的',
-      url: '',
-      color: '#6B6355',
-      flavors: [],
-      categories: [],
-      price: 2,
-      note: '自己找的、自己吃过的店。这类不该算「博主命中率」，只当作你自己的清单。',
-      hits: { good: 0, total: 0 }
     }
   ],
   places: [
@@ -258,7 +245,7 @@ window.SEED = {
       flavors: [], category: '粤菜', price: 1, scene: '一人食',
       dish: '石磨肠粉',
       quote: '自己找的：米浆现磨，布拉肠薄到透光，豉油偏甜。',
-      sourceUrl: '', bloggerId: 'b_me'
+      sourceUrl: '', own: true
     },
     {
       id: 'p_shengxiangting', kind: 'eat', name: '盛香亭丽影广场店', city: '广州',
@@ -266,7 +253,7 @@ window.SEED = {
       flavors: [], category: '热卤', price: 1, scene: '一人食',
       dish: '热卤 · 藕片 · 鸭脖',
       quote: '自己找的：热卤现捞，辣度能选微辣；当宵夜比当正餐合适。',
-      sourceUrl: '', bloggerId: 'b_me'
+      sourceUrl: '', own: true
     },
     {
       id: 'p_laodifang', kind: 'eat', name: '老地方巢皮肠粉', city: '广州',
@@ -274,7 +261,7 @@ window.SEED = {
       flavors: [], category: '粤菜', price: 1, scene: '一人食',
       dish: '巢皮肠粉',
       quote: '踩雷：皮厚、豉油死咸。',
-      sourceUrl: '', bloggerId: 'b_me'
+      sourceUrl: '', own: true
     }
   ],
   visits: [
