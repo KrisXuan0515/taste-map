@@ -619,3 +619,31 @@ body { background: #E7E0D2; }
 }
 .mm-av.hot { box-shadow: 0 0 0 2px #FFFDF7, 0 0 0 4px rgba(46, 107, 79, .35); }
 .mm-av.spot { box-shadow: 0 0 0 2px #FFFDF7, 0 0 0 4px rgba(201, 134, 42, .35); }
+
+/* ===== 批量粘贴清单 ===== */
+.blist { margin: 6px 0 12px; max-height: 46vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+.brow {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 10px 12px; margin-bottom: 6px;
+  background: #FFFDF7; border: 1px solid rgba(32, 27, 22, .08);
+  border-radius: 12px; cursor: pointer;
+}
+.brow.off { opacity: .45; }
+.brow .chk {
+  flex: 0 0 20px; height: 20px; margin-top: 1px;
+  border-radius: 6px; border: 1.5px solid var(--accent);
+  color: #FFFDF7; background: var(--accent);
+  font-size: 13px; line-height: 18px; text-align: center; font-weight: 700;
+}
+.brow.off .chk { background: transparent; border-color: rgba(32, 27, 22, .28); }
+.bmain { flex: 1; min-width: 0; }
+.bmain b { display: block; font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.bmain span { display: block; margin-top: 2px; font-size: 12px; color: #7A6F62; }
+.bmain .bok, .bmain .bbad, .bmain .bwait {
+  display: inline-block; margin-top: 5px; padding: 1px 7px;
+  border-radius: 6px; font-size: 11px; font-weight: 600;
+}
+.bmain .bok { background: rgba(46, 107, 79, .12); color: #2E6B4F; }
+.bmain .bbad { background: rgba(193, 73, 45, .12); color: #C1492D; }
+.bmain .bwait { background: rgba(32, 27, 22, .07); color: #7A6F62; }
+

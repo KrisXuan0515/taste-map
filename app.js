@@ -1155,6 +1155,7 @@
     openSheet('<div class="sheet-h">收一条推荐</div>' +
       '<div class="sheet-sub">最快的方式：在小红书 / 抖音点「分享 → 复制」，把文字粘进来，自动认出店名、菜、价格。位置再在地图上点一下。</div>' +
       '<div class="act-row"><button class="btn primary" data-act="import">粘贴一条（推荐）</button></div>' +
+      '<div class="act-row"><button class="btn ghost" data-act="batch">批量粘贴（一次十几家）</button></div>' +
       '<div class="act-row"><button class="btn ghost" data-act="manual">空白手填</button></div>' +
       '<div class="act-row"><button class="btn ghost" data-act="addblogger">先加一位博主</button></div>');
   }
@@ -1174,7 +1175,7 @@
     }
     navigator.clipboard.readText().then(function (t) {
       if (!t) { toast('剪贴板是空的'); return; }
-      var box = $('#pasteBox');
+      var box = $('#pasteBox') || $('#batchBox');
       if (box) { box.value = t; box.focus(); }
       toast('已填入，点「识别」');
     })['catch'](function () {
@@ -1207,7 +1208,13 @@
     if (ma) out.address = ma[1];
 
     var mn = body.match(/(?:店名|餐厅|位置|📍|🏠)\s*[：: ]?\s*([^\n，。,！!?？]{2,20})/);
-    if (mn) out.name = mn[1].trim();
+    if (mn) {
+      /* 一行里「📍店名 地址 人均XX」挤在一起时，只取第一段作为店名，
+         否则会把地址和价格一起吃进店名（批量粘贴都是这种一行一家的写法） */
+      var nm = mn[1].trim();
+      if (/[ 　]/.test(nm)) nm = nm.split(/[ 　]+/)[0];
+      out.name = nm;
+    }
     if (!out.name) {
       var mq = body.match(/[《【]([^》】]{2,16})[》】]/);
       if (mq && /(店|馆|楼|记|面|饭|食|茶|咖啡|厨房)/.test(mq[1])) out.name = mq[1];
@@ -1248,6 +1255,141 @@
       });
       toast(r.name ? '认出来了：' + r.name + '（位置还得点一下）' : '没认出店名，手动填一下');
     }, 140);
+  }
+
+  /* ================= 批量粘贴：一次多家 ================= */
+  var PRICE_LBL = ['', '¥30 内', '¥30–80', '¥80–150', '¥150+'];
+
+  /* 按店名/菜名猜菜系。猜错不要紧，导入后在详情里能改。 */
+  function guessCat(s) {
+    var t = String(s || '');
+    if (/(肠粉|拉肠|烧鹅|烧腊|煲仔|叉烧|云吞|茶餐厅|早茶|粤)/.test(t)) return '粤菜';
+    if (/(潮汕|牛肉丸|粿|砂锅粥)/.test(t)) return '潮汕';
+    if (/(川|麻辣|水煮|串串|酸菜鱼)/.test(t)) return '川';
+    if (/(本帮|生煎|小笼|浓油|上海)/.test(t)) return '本帮';
+    if (/(卤|鸭脖|藕片)/.test(t)) return '热卤';
+    return '小吃';
+  }
+
+  function openBatch() {
+    openSheet('<div class="sheet-h">批量粘贴</div>' +
+      '<div class="sheet-sub">一次贴好几家。一家一行，或者一家一段（中间空一行）。能认出店名、菜、人均、地址、链接。</div>' +
+      '<textarea id="batchBox" class="paste" rows="8" placeholder="📍诚锋石磨肠粉 新港中路456号 人均15 石磨肠粉薄到透光\n📍老地方巢皮肠粉 新港中路452号 人均12 皮太厚，豉油死咸\n📍盛香亭丽影广场店 人均40 热卤藕片鸭脖"></textarea>' +
+      '<div class="act-row two"><button class="btn ghost" data-act="paste-clip">从剪贴板读</button>' +
+      '<button class="btn primary" data-act="batch-parse">拆成清单</button></div>' +
+      '<div class="hint">拆完能勾掉不要的，再一键查坐标。查不到的留空，回头点地图补。</div>');
+  }
+
+  /* 一家一段（空行分隔）优先；整段没空行就按行拆 */
+  function splitBatch(text) {
+    var t = String(text || '').replace(/\r/g, '').trim();
+    if (!t) return [];
+    var blocks = t.split(/\n\s*\n+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    if (blocks.length < 2) {
+      blocks = t.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+    return blocks;
+  }
+
+  function batchParse() {
+    var box = $('#batchBox');
+    var blocks = splitBatch(box ? box.value : '');
+    if (!blocks.length) { toast('先粘点东西进来'); return; }
+    state.batch = {
+      items: blocks.map(function (b) {
+        var r = parseNote(b);
+        var nm = r.name;
+        if (!nm && b.length <= 20) nm = b.replace(/^[📍🏠🍜🍲✨·\-\s\d.、]+/, '').trim();
+        return {
+          text: b, name: nm || '', dish: r.dish || '', address: r.address || '',
+          price: r.price || 0, url: r.url || '', platform: r.platform || '',
+          lat: 0, lng: 0, region: '', geo: 0, on: !!nm
+        };
+      })
+    };
+    openBatchList();
+  }
+
+  function openBatchList() {
+    var items = (state.batch && state.batch.items) || [];
+    var rows = items.map(function (it, i) {
+      var tag = it.geo === 1 ? '<b class="bok">已定位</b>'
+        : it.geo === 2 ? '<b class="bbad">没查到</b>'
+        : it.geo === 3 ? '<b class="bwait">查…</b>' : '';
+      var meta = [it.dish, it.price ? PRICE_LBL[it.price] : '', it.address, it.platform]
+        .filter(Boolean).map(esc).join(' · ');
+      return '<div class="brow' + (it.on ? '' : ' off') + '" data-act="batch-toggle" data-i="' + i + '">' +
+        '<span class="chk">' + (it.on ? '✓' : '') + '</span>' +
+        '<div class="bmain"><b>' + esc(it.name || '（没认出店名，先取消勾选）') + '</b>' +
+        (meta ? '<span>' + meta + '</span>' : '') + tag + '</div></div>';
+    }).join('');
+    var picked = items.filter(function (it) { return it.on && it.name; });
+    openSheet('<div class="sheet-h">拆出 ' + items.length + ' 家，勾了 ' + picked.length + ' 家</div>' +
+      '<div class="sheet-sub">点一行可以取消或恢复。名字不准的也可以先导入，再点进去改。</div>' +
+      '<div class="blist">' + rows + '</div>' +
+      '<div class="act-row two"><button class="btn ghost" data-act="batch-geo">查坐标</button>' +
+      '<button class="btn primary" data-act="batch-import">导入 ' + picked.length + ' 家</button></div>' +
+      '<div class="act-row"><button class="btn ghost" data-act="batch">返回重粘</button></div>');
+  }
+
+  function batchToggle(i) {
+    var it = state.batch && state.batch.items[i];
+    if (!it) return;
+    it.on = !it.on;
+    openBatchList();
+  }
+
+  /* 逐条查高德。必须节流：高德有 QPS 限制，连发会返回 CUQPS_HAS_EXCEEDED_THE_LIMIT */
+  function batchGeo() {
+    var items = (state.batch && state.batch.items) || [];
+    var todo = items.filter(function (it) { return it.on && it.name && it.geo !== 1; });
+    if (!todo.length) { toast('没有要查的了'); return; }
+    if (!amapKey()) { openAmapKey(); toast('先填高德 Key'); return; }
+    var i = 0;
+    (function step() {
+      if (i >= todo.length) { openBatchList(); toast('查完了'); return; }
+      var it = todo[i++];
+      it.geo = 3;
+      openBatchList();
+      var url = 'https://restapi.amap.com/v3/place/text?key=' + encodeURIComponent(amapKey()) +
+        '&keywords=' + encodeURIComponent(it.name) + '&offset=1&page=1&extensions=base' +
+        '&city=' + encodeURIComponent(S.city) + '&citylimit=true';
+      jsonp(url, function (d) {
+        var p = (d && String(d.status) === '1' && d.pois && d.pois[0]) || null;
+        if (p && p.location) {
+          var loc = String(p.location).split(',');
+          it.lng = +loc[0]; it.lat = +loc[1];
+          it.region = p.adname || '';
+          if (!it.address) it.address = (typeof p.address === 'string' ? p.address : '') ;
+          it.geo = 1;
+        } else {
+          it.geo = 2;
+        }
+        setTimeout(step, 600);
+      });
+    })();
+  }
+
+  function batchImport() {
+    var items = ((state.batch && state.batch.items) || []).filter(function (it) { return it.on && it.name; });
+    if (!items.length) { toast('一家都没勾'); return; }
+    var base = cityCenter(S.city) || FALLBACK;
+    items.forEach(function (it) {
+      var cat = guessCat(it.name + ' ' + it.dish);
+      var taste = (window.TASTE_BY_CUISINE || {})[cat] || [1, 1, 2, 2.5, 1, 2, 2.5, 2, 1];
+      S.places.push({
+        id: uid('p'), kind: 'eat', name: it.name, city: S.city,
+        lat: it.lat || (state.loc ? state.loc.lat : base.lat),
+        lng: it.lng || (state.loc ? state.loc.lng : base.lng),
+        address: it.address || '', region: it.region || '',
+        flavors: [], category: cat, cuisine: cat, price: it.price || 2, scene: '一人食',
+        dish: it.dish || '', quote: it.dish ? '' : String(it.text || '').slice(0, 60),
+        sourceUrl: it.url || '', own: true, taste: taste.slice()
+      });
+    });
+    save(); state.batch = null; closeSheet(); render();
+    var noGeo = items.filter(function (it) { return !it.geo; }).length;
+    toast('导入 ' + items.length + ' 家' + (noGeo ? '，' + noGeo + ' 家没坐标，点地图补' : ''));
   }
 
   /* ================= 渲染总入口 ================= */
@@ -1911,6 +2053,11 @@
       if (act === 'add') { openAdd(); return; }
       if (act === 'manual') { closeSheet(); setTimeout(function () { openPlaceForm(null); }, 120); return; }
       if (act === 'import') { openImport(); return; }
+      if (act === 'batch') { openBatch(); return; }
+      if (act === 'batch-parse') { batchParse(); return; }
+      if (act === 'batch-toggle') { batchToggle(+t.dataset.i); return; }
+      if (act === 'batch-geo') { batchGeo(); return; }
+      if (act === 'batch-import') { batchImport(); return; }
       if (act === 'paste-clip') { readClip(); return; }
       if (act === 'parse') { doParse(); return; }
       if (act === 'mood') { openMood(); return; }
@@ -2074,7 +2221,9 @@
     setTab: function (t) { state.tab = t; },
     openPlaceForm: openPlaceForm, openHidden: openHidden, openAmapKey: openAmapKey,
     lookup: lookup, pickPoi: pickPoi, amapKey: amapKey, jsonp: jsonp, syncSeed: syncSeed,
-    submitPlace: submitPlace, authorOf: authorOf, ownOf: ownOf
+    submitPlace: submitPlace, authorOf: authorOf, ownOf: ownOf,
+    openBatch: openBatch, batchParse: batchParse, batchToggle: batchToggle,
+    batchImport: batchImport, splitBatch: splitBatch, guessCat: guessCat
   };
 })();
 

@@ -1,7 +1,7 @@
 /* 口味地图 - 离线缓存
    策略：同源资源 network-first（拿到新版就用新版，断网才回缓存），
         避免开发期手机一直吃到旧的 app.js / data.js。 */
-var CACHE = 'taste-map-v10';
+var CACHE = 'taste-map-v11';
 var CORE = ['./', './index.html', './styles.css', './app.js', './data.js', './extra.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', function (e) {
