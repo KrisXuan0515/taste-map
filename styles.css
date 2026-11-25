@@ -431,3 +431,175 @@ textarea { min-height: 62px; resize: vertical; }
   font-size: 13px; line-height: 1.6; font-family: inherit; resize: vertical; background: #fff; -webkit-appearance: none; }
 .hint { margin-top: 8px; font-size: 11px; color: var(--muted); line-height: 1.55; }
 .act-row.two .btn { flex: 1; }
+
+/* ===================== v3 视觉：向「烟火小店」靠 =====================
+   奶油底 + 墨绿主色 + 衬线店名。没有照片，就用博主色块和店名首字当封面。 */
+:root {
+  --bg: #F8F5EC;
+  --surface: #FFFDF7;
+  --ink: #1E1A15;
+  --muted: #8C8478;
+  --line: #E9E1D2;
+  --accent: #2E6B4F;
+  --accent-soft: #E3EFE6;
+  --gold: #C9862A;
+  --green: #2E6B4F;
+  --warn: #C1492D;
+  --warn-soft: #F7E4DD;
+  --shadow: 0 2px 14px rgba(45, 55, 45, .07);
+  --r: 18px;
+  --serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
+}
+body { background: #E7E0D2; }
+.hdr .city, .dhero h2, .hero-name, .sect, .qtitle { font-family: var(--serif); }
+.loc.warn { color: var(--warn); }
+.banner { background: var(--warn-soft); color: #8A3320; }
+.why.warn { color: var(--warn); }
+
+/* 圆形头像：地图上和列表里都靠它认出「谁推的」 */
+.av {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex: 0 0 34px;
+  border-radius: 50%; color: #FFFDF7;
+  font-size: 14px; font-weight: 600;
+  box-shadow: 0 0 0 2px #FFFDF7, 0 1px 4px rgba(0, 0, 0, .18);
+}
+
+/* ---------- 头牌大卡 ---------- */
+.hero {
+  margin: 12px 16px 4px; border-radius: var(--r); overflow: hidden;
+  background: var(--surface); box-shadow: var(--shadow);
+}
+.hero-pic {
+  position: relative; height: 168px;
+  display: flex; align-items: center; justify-content: center;
+}
+.hero-ch {
+  font-family: var(--serif); font-size: 108px; line-height: 1;
+  color: rgba(255, 253, 247, .18); user-select: none;
+}
+.hero-name {
+  position: absolute; left: 16px; bottom: 12px;
+  font-size: 27px; font-weight: 700; color: #FFFDF7; letter-spacing: .5px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .35);
+}
+.hero-no {
+  position: absolute; left: 0; top: 14px;
+  padding: 3px 10px 3px 14px; border-radius: 0 999px 999px 0;
+  background: #FFFDF7; color: var(--ink);
+  font-size: 12px; font-weight: 700; letter-spacing: .5px;
+}
+.hero-dist {
+  position: absolute; right: 14px; bottom: 14px;
+  padding: 3px 9px; border-radius: 999px;
+  background: rgba(20, 30, 20, .55); color: #FFFDF7; font-size: 12px;
+  backdrop-filter: blur(4px);
+}
+.hero-body { padding: 12px 16px 14px; }
+.hero-quote {
+  margin: 6px 0 10px; font-size: 14px; line-height: 1.6; color: #4A443B;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.hero-rec { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.hero-rec .av { width: 28px; height: 28px; flex: 0 0 28px; font-size: 12px; }
+.hr-name { color: var(--ink); font-weight: 600; }
+.hr-sep { width: 1px; height: 12px; background: var(--line); }
+.hero-foot {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--muted);
+}
+.hf-score { font-size: 20px; font-weight: 700; color: var(--accent); font-family: var(--serif); }
+.hf-score i { font-size: 11px; font-style: normal; margin-left: 2px; color: var(--muted); }
+.hero-foot .why, .hero-foot .why.ok, .hero-foot .why.warn { margin: 0; font-size: 12px; }
+
+/* ---------- 简洁行 ---------- */
+.sect {
+  margin: 22px 16px 8px; font-size: 17px; font-weight: 700; letter-spacing: .5px;
+}
+.sect:first-child { margin-top: 8px; }
+.row {
+  display: flex; align-items: flex-start; gap: 11px;
+  margin: 0 12px 8px; padding: 12px 14px;
+  background: var(--surface); border-radius: 14px; box-shadow: var(--shadow);
+}
+.row-main { flex: 1; min-width: 0; }
+.row-name { font-size: 15.5px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+.rdist { margin-left: auto; font-size: 11.5px; font-weight: 400; color: var(--muted); }
+.row-meta { margin-top: 2px; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.row-quote {
+  margin-top: 5px; font-size: 12.5px; color: #5B5449; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.row-score {
+  align-self: center; font-family: var(--serif); font-size: 17px;
+  font-weight: 700; color: var(--accent);
+}
+
+/* ---------- 详情 ---------- */
+.dhero { margin: 2px 0 14px; }
+.dh-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.dh-top h2 { margin: 0; font-size: 25px; font-weight: 700; letter-spacing: .5px; }
+.dh-dist { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.dh-sub { margin-top: 4px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+.three { display: flex; gap: 8px; margin: 0 0 10px; }
+.tb {
+  flex: 1; padding: 11px 0; border-radius: 12px;
+  background: #F1ECE0; color: #5B5449;
+  font-size: 14px; font-weight: 600;
+  transition: .15s;
+}
+.tb:active { transform: scale(.97); }
+.tb.on.good { background: var(--accent); color: #FFFDF7; }
+.tb.on.bad { background: var(--warn); color: #FFFDF7; }
+.tb.on.want { background: var(--gold); color: #FFFDF7; }
+.btn.primary.wide { width: 100%; margin-bottom: 16px; border-radius: 12px; padding: 14px 0; font-size: 15.5px; }
+
+.rec { margin: 0 0 18px; padding: 14px; border-radius: 14px; background: #F3EFE3; }
+.rec-h { font-size: 12px; color: var(--muted); letter-spacing: .5px; }
+.rec-top { display: flex; align-items: center; gap: 9px; margin-top: 8px; font-size: 14px; }
+.rec-src { font-size: 11px; color: var(--muted); }
+.rec-hit { margin-left: auto; font-size: 11px; color: var(--accent); font-weight: 600; }
+.rec-quote {
+  margin: 10px 0 0; padding-left: 11px; border-left: 2px solid #D8D0BE;
+  font-size: 13.5px; line-height: 1.65; color: #4A443B;
+}
+
+.dsec { margin: 0 0 18px; }
+.dsec-h { font-size: 12px; color: var(--muted); letter-spacing: .5px; margin-bottom: 8px; }
+.dish { padding: 11px 0; border-bottom: 1px solid var(--line); }
+.dish:last-child { border-bottom: 0; }
+.dish-top { display: flex; align-items: center; gap: 8px; }
+.dish-top b { font-size: 15px; }
+.heat {
+  margin-left: auto; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+}
+.heat.h3 { background: #F6E3D4; color: #A8541F; }
+.heat.h2 { background: #EFE9DA; color: #6B6355; }
+.heat.h1 { background: #EDEDED; color: #8C8478; }
+.dish-note { margin-top: 3px; font-size: 12.5px; color: var(--muted); line-height: 1.55; }
+
+.stats { display: flex; gap: 6px; padding: 4px 12px 8px; }
+.stats .stat { flex: 1; padding: 10px 4px; text-align: center; background: var(--surface); border-radius: 12px; }
+.stats .stat b { display: block; font-size: 17px; font-family: var(--serif); }
+.stats .stat span { font-size: 10.5px; color: var(--muted); }
+
+/* ---------- 地图上的头像点 ---------- */
+.mm-av {
+  position: absolute; left: 0; top: 0;
+  width: 30px; height: 30px; margin: -15px 0 0 -15px;
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  color: #FFFDF7; font-size: 13px; font-weight: 700;
+  box-shadow: 0 0 0 2px #FFFDF7, 0 2px 6px rgba(0, 0, 0, .28);
+  cursor: pointer; pointer-events: auto;
+}
+.mm-av span {
+  position: absolute; top: 32px; left: 50%; transform: translateX(-50%);
+  padding: 1px 6px; border-radius: 6px; white-space: nowrap;
+  background: rgba(255, 253, 247, .94); color: #33302A;
+  font-size: 10.5px; font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .16);
+}
+.mm-av.hot { box-shadow: 0 0 0 2px #FFFDF7, 0 0 0 4px rgba(46, 107, 79, .35); }
+.mm-av.spot { box-shadow: 0 0 0 2px #FFFDF7, 0 0 0 4px rgba(201, 134, 42, .35); }

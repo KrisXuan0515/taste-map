@@ -300,7 +300,23 @@
       wrap.className = 'mm-mark';
       wrap.style.transform = 'translate(' + p.x + 'px,' + p.y + 'px)';
       var dot = document.createElement('div');
-      dot.className = m.me ? 'mm-me' : 'mm-dot ' + (m.cls || '');
+      if (m.me) {
+        dot.className = 'mm-me';
+      } else if (m.av) {
+        /* 地图上的点是「谁推荐的」，不是「哪家店」 */
+        dot.className = 'mm-av ' + (m.cls || '');
+        dot.style.background = m.av.color || '#2E6B4F';
+        var bb = document.createElement('b');
+        bb.textContent = m.av.ch || '?';
+        dot.appendChild(bb);
+        if (m.label) {
+          var sp = document.createElement('span');
+          sp.textContent = m.label;
+          dot.appendChild(sp);
+        }
+      } else {
+        dot.className = 'mm-dot ' + (m.cls || '');
+      }
       if (m.label && !m.me) {
         dot.title = m.label;
         dot.addEventListener('click', function (e) {
@@ -324,7 +340,7 @@
   MiniMap.prototype.bindDrag = function () {
     var self = this, dragging = false, sx = 0, sy = 0, ox = 0, oy = 0, moved = 0;
     this.host.addEventListener('pointerdown', function (e) {
-      if (e.target.closest('.mm-ctrl, .mm-locate, .mm-dot')) return;
+      if (e.target.closest('.mm-ctrl, .mm-locate, .mm-dot, .mm-av')) return;
       dragging = true; moved = 0;
       sx = e.clientX; sy = e.clientY;
       ox = self.origin.x; oy = self.origin.y;
@@ -390,6 +406,11 @@
     if (!o.me.scenes) o.me.scenes = [];
     if (!o.me.categories) o.me.categories = [];
     if (!o.visits) o.visits = [];
+    if (!o.want) o.want = [];
+    /* 旧数据是 1–5 星，转成「好吃 / 不好吃」 */
+    o.visits.forEach(function (v) {
+      if (!v.verdict) v.verdict = (num(v.rating, 4) >= 4) ? 'good' : 'bad';
+    });
     (o.places || []).forEach(function (p) {
       if (!p.taste && p.kind !== 'spot') {
         var a = (window.TASTE_PLACES || {})[p.id] || (window.TASTE_BY_CUISINE || {})[p.cuisine];
@@ -435,6 +456,30 @@
     return null;
   }
   function uid(p) { return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  /* 展示层补充：区、逐菜。外部文件给，不落库。 */
+  function extraOf(p) { return ((window.EXTRA || {})[p.id]) || {}; }
+  function regionOf(p) { return extraOf(p).region || ''; }
+  function dishesOf(p) {
+    var ex = extraOf(p).dishes;
+    if (ex && ex.length) return ex;
+    if (p.dish) return String(p.dish).split(/\s*[·、,，]\s*/).filter(Boolean).map(function (n) {
+      return { n: n, h: 2, note: '' };
+    });
+    return [];
+  }
+  function avatarHTML(b, size) {
+    var col = (b && b.color) || '#B9AE9D';
+    var ch = b ? String(b.name || '?').slice(0, 1) : '?';
+    return '<span class="av' + (size ? ' ' + size : '') + '" style="background:' + col + '">' + esc(ch) + '</span>';
+  }
+  function wantOf(id) { return (S.want || []).indexOf(id) >= 0; }
+  function setWant(id, on) {
+    S.want = S.want || [];
+    var i = S.want.indexOf(id);
+    if (on && i < 0) S.want.push(id);
+    if (!on && i >= 0) S.want.splice(i, 1);
+    save();
+  }
 
   /* ================= 口味打分 ================= */
 
@@ -590,31 +635,59 @@
     return '';
   }
 
+  function priceHTML(p) { return p.price ? priceText(p.price) : '价格未记'; }
+
+  /* 头牌：第一家占满一屏宽，像杂志封面。没有照片，就用店名的第一个字当封面字。 */
+  function hero(it, rank) {
+    var p = it.p, b = bloggerById(p.bloggerId), v = visitOf(p.id), t = it.t;
+    var tags = [];
+    if (p.local === 3) tags.push('本地招牌');
+    if (p.cuisine) tags.push(p.cuisine);
+    var ch = String(p.name || '').replace(/^[（(].*?[)）]/, '').slice(0, 1);
+    return '<article class="hero" data-act="place" data-id="' + p.id + '">' +
+      '<div class="hero-pic" style="background:' + ((b && b.color) || '#2E6B4F') + '">' +
+        '<span class="hero-ch">' + esc(ch) + '</span>' +
+        '<span class="hero-no">No.' + (rank < 10 ? '0' + rank : rank) + '</span>' +
+        '<span class="hero-dist">' + distText(it.d) + '</span>' +
+        '<div class="hero-name">' + esc(p.name) + '</div>' +
+      '</div>' +
+      '<div class="hero-body">' +
+        (tags.length ? '<div class="c-tags">' + tags.map(function (x) { return '<i>' + esc(x) + '</i>'; }).join('') + '</div>' : '') +
+        (p.quote ? '<p class="hero-quote">' + esc(p.quote) + '</p>' : '') +
+        '<div class="hero-rec">' + avatarHTML(b) +
+          '<span class="hr-name">' + (b ? esc(b.name) : '未标博主') + '</span>' +
+          '<span class="hr-sep"></span><span>' + priceHTML(p) + '</span>' +
+          (regionOf(p) ? '<span class="hr-sep"></span><span>' + esc(regionOf(p)) + '</span>' : '') +
+        '</div>' +
+        '<div class="hero-foot">' +
+          '<span class="hf-score">' + Math.round(it.s * 100) + '<i>分</i></span>' +
+          (p.kind === 'spot' ? '' : '<span class="tp">口味 ' + Math.round(t.sim * 100) + '%</span>') +
+          whyHTML(t) +
+          (v ? '<span class="done">' + (v.verdict === 'bad' ? '踩过雷' : '吃过了') + '</span>' : '') +
+          (wantOf(p.id) ? '<span class="done want">想去</span>' : '') +
+        '</div>' +
+      '</div>' +
+    '</article>';
+  }
+
   function card(it) {
     var p = it.p, b = bloggerById(p.bloggerId), v = visitOf(p.id), t = it.t;
-    var cls = p.kind === 'spot' ? 'soft' : '';
-    var pills = (p.flavors || []).map(function (f) { return '<i class="' + cls + '">' + esc(f) + '</i>'; });
-    if (p.cuisine) pills.push('<i class="soft">' + esc(p.cuisine) + '</i>');
-    return '' +
-      '<article class="card" data-act="place" data-id="' + p.id + '">' +
-        '<div class="c-top"><h3>' + esc(p.name) + '</h3>' +
-          '<span class="pill ' + (it.s > 0.62 ? 'hot' : '') + '" title="综合分">' + Math.round(it.s * 100) + ' 分</span></div>' +
-        '<div class="c-meta">' +
-          (p.kind === 'spot' ? '' : '<span class="tp">口味 ' + Math.round(t.sim * 100) + '%</span>') +
-          '<span>' + distText(it.d) + '</span>' +
-          (p.local === 3 ? '<span class="lb3">本地招牌</span>' : p.local === 1 ? '<span class="lb1">到处都有</span>' : '') +
-          (p.address ? '<span>' + esc(p.address) + '</span>' : '') +
-          (p.price ? '<span>' + priceText(p.price) + '</span>' : '') +
-          (p.kind === 'spot' ? '<span>景点</span>' : '') + '</div>' +
-        whyHTML(t) +
-        (pills.length ? '<div class="c-tags">' + pills.join('') + '</div>' : '') +
-        (p.dish ? '<div class="c-dish">招牌：' + esc(p.dish) + '</div>' : '') +
-        (p.quote ? '<p class="c-quote">' + esc(p.quote) + '</p>' : '') +
-        '<div class="c-foot"><span class="bdot" style="background:' + (b ? b.color : '#B9AE9D') + '"></span>' +
-          '<span>' + (b ? esc(b.name) : '未标博主') + '</span>' +
-          (b ? (b.hits && b.hits.total ? '<span class="rel">命中 ' + Math.round(relOf(b) * 100) + '%</span>' : '<span class="rel">新博主 · 还没验证</span>') : '') +
-          (v ? '<span class="done">已打卡</span>' : '') + '</div>' +
-      '</article>';
+    return '<div class="row" data-act="place" data-id="' + p.id + '">' +
+      avatarHTML(b) +
+      '<div class="row-main">' +
+        '<div class="row-name">' + esc(p.name) + '<span class="rdist">' + distText(it.d) + '</span></div>' +
+        '<div class="row-meta">' +
+          (p.kind === 'spot' ? '景点' : '吃') +
+          (p.cuisine ? ' · ' + esc(p.cuisine) : '') +
+          (regionOf(p) ? ' · ' + esc(regionOf(p)) : '') +
+          (p.kind === 'spot' ? '' : ' · 口味 ' + Math.round(t.sim * 100) + '%') +
+          (v ? ' · ' + (v.verdict === 'bad' ? '踩过雷' : '好吃') : '') +
+          (wantOf(p.id) ? ' · 想去' : '') +
+        '</div>' +
+        (p.quote ? '<div class="row-quote">' + esc(p.quote) + '</div>' : '') +
+      '</div>' +
+      '<div class="row-score">' + Math.round(it.s * 100) + '</div>' +
+    '</div>';
   }
 
   function viewNearby() {
@@ -655,8 +728,12 @@
       '<div class="mapwrap"><div class="mm" id="map"></div></div>' +
       '<div class="chips" style="padding:0 16px 8px">' + kindChip('all', '全部') + kindChip('eat', '吃') + kindChip('spot', '逛') + '</div>' +
       '<div class="list">' +
-        (items.length ? items.map(card).join('') :
-          '<div class="empty"><b>这里还没有推荐</b>点右下角的 + 把博主说的店收进来。<br>收录之后，到这个城市打开就能按距离看。</div>') +
+        (items.length
+          ? hero(items[0], 1) +
+            (items.length > 1
+              ? '<div class="sect">附近还有 ' + (items.length - 1) + ' 家</div>' + items.slice(1).map(card).join('')
+              : '')
+          : '<div class="empty"><b>这里还没有推荐</b>点右下角的 + 把博主说的店收进来。<br>收录之后，到这个城市打开就能按距离看。</div>') +
       '</div>' +
       '<button class="fab" data-act="add" aria-label="收录一家">+</button>';
   }
@@ -686,8 +763,10 @@
     });
     var marks = items.map(function (it) {
       var sim = it.t.sim;
+      var b = bloggerById(it.p.bloggerId);
       return {
         id: it.p.id, lat: it.p.lat, lng: it.p.lng, label: it.p.name,
+        av: { color: (b && b.color) || '#B9AE9D', ch: b ? String(b.name || '?').slice(0, 1) : '·' },
         cls: it.p.kind === 'spot' ? 'spot' : (sim > 0.78 ? 'hot' : sim > 0.6 ? 'warm' : '')
       };
     });
@@ -698,46 +777,37 @@
 
   /* ================= 渲染：打卡 ================= */
   function viewCheckin() {
-    var visited = [], pending = [];
+    var want = [], good = [], bad = [], pending = [];
     var items = ranked({ ignoreKind: true }).filter(function (it) { return it.p.kind === 'eat'; });
-    items.forEach(function (it) { (visitOf(it.p.id) ? visited : pending).push(it); });
-    var sum = 0;
-    visited.forEach(function (it) { sum += visitOf(it.p.id).rating; });
-    var avg = visited.length ? (sum / visited.length).toFixed(1) : '—';
+    items.forEach(function (it) {
+      var v = visitOf(it.p.id);
+      if (v) (v.verdict === 'bad' ? bad : good).push(it);
+      else if (wantOf(it.p.id)) want.push(it);
+      else pending.push(it);
+    });
     var best = null, bestR = 0;
     S.bloggers.forEach(function (b) {
       var r = relOf(b);
       if ((b.hits && b.hits.total >= 2) && r > bestR && r > 0.6) { bestR = r; best = b; }
     });
 
-    var pendingHTML = pending.slice(0, 8).map(function (it) {
-      return '<article class="card" data-act="rate" data-id="' + it.p.id + '">' +
-        '<div class="c-top"><h3>' + esc(it.p.name) + '</h3><span class="pill">' + distText(it.d) + '</span></div>' +
-        '<div class="c-meta"><span>' + (it.p.dish ? esc(it.p.dish) : '') + '</span><span>点一下记一顿</span></div>' +
-        '</article>';
-    }).join('');
-
-    var doneHTML = visited.map(function (it) {
-      var v = visitOf(it.p.id);
-      return '<article class="card" data-act="rate" data-id="' + it.p.id + '">' +
-        '<div class="c-top"><h3>' + esc(it.p.name) + '</h3>' +
-        '<span class="pill hot">' + '★'.repeat(v.rating) + '</span></div>' +
-        (v.note ? '<p class="c-quote">' + esc(v.note) + '</p>' : '') +
-        '</article>';
-    }).join('');
+    var rowOf = function (it) { return card(it); };
 
     return '' +
-      '<div class="hdr"><div class="hdr-top"><div><div class="city">打卡</div>' +
-      '<div class="loc">吃完记一笔，系统才知道哪个博主靠谱</div></div></div></div>' +
+      '<div class="hdr"><div class="hdr-top"><div><div class="city">清单</div>' +
+      '<div class="loc">吃完点一下「好吃」，系统才知道哪个博主靠谱</div></div></div></div>' +
       '<div class="stats">' +
-        '<div class="stat"><b>' + visited.length + '</b><span>已打卡</span></div>' +
-        '<div class="stat"><b>' + avg + '</b><span>平均分</span></div>' +
-        '<div class="stat"><b>' + (best ? '★' + best.name : '—') + '</b><span>目前最准</span></div>' +
+        '<div class="stat"><b>' + good.length + '</b><span>好吃</span></div>' +
+        '<div class="stat"><b>' + bad.length + '</b><span>踩雷</span></div>' +
+        '<div class="stat"><b>' + want.length + '</b><span>想去</span></div>' +
+        '<div class="stat"><b>' + (best ? best.name : '—') + '</b><span>最准</span></div>' +
       '</div>' +
-      '<div class="section-title">待打卡</div>' +
-      '<div class="list">' + (pendingHTML || '<div class="empty">附近都吃过了。</div>') + '</div>' +
-      '<div class="section-title">已打卡</div>' +
-      '<div class="list">' + (doneHTML || '<div class="empty">还没有打卡记录。</div>') + '</div>';
+      (want.length ? '<div class="sect">稍后去吃</div><div class="list">' + want.map(rowOf).join('') + '</div>' : '') +
+      '<div class="sect">还没吃过 · 附近 ' + pending.length + ' 家</div>' +
+      '<div class="list">' + (pending.slice(0, 8).map(rowOf).join('') || '<div class="empty">附近都吃过了。</div>') + '</div>' +
+      (good.length || bad.length
+        ? '<div class="sect">吃过的</div><div class="list">' + good.concat(bad).map(rowOf).join('') + '</div>'
+        : '');
   }
 
   /* ================= 渲染：我的 ================= */
@@ -1038,44 +1108,113 @@
         esc((p.src && p.src.platform) || '打开原文') + '</a>']);
     }
 
+    var ds = dishesOf(p);
+    var dishHTML = ds.length
+      ? '<div class="dsec"><div class="dsec-h">' + ds.length + ' 道菜' + (p.kind === 'spot' ? '' : '，按推荐度排') + '</div>' +
+        ds.slice().sort(function (a, b) { return (b.h || 2) - (a.h || 2); }).map(function (dh) {
+          var hot = Math.max(1, Math.min(3, dh.h || 2));
+          return '<div class="dish"><div class="dish-top"><b>' + esc(dh.n) + '</b>' +
+            '<span class="heat h' + hot + '">' + (hot === 3 ? '必点' : hot === 2 ? '值得' : '凑数') + '</span></div>' +
+            (dh.note ? '<div class="dish-note">' + esc(dh.note) + '</div>' : '') + '</div>';
+        }).join('') + '</div>'
+      : '';
+
+    var meta = [];
+    if (p.kind === 'spot') meta.push('景点');
+    if (p.cuisine) meta.push(esc(p.cuisine));
+    if (regionOf(p)) meta.push(esc(regionOf(p)));
+    if (p.address) meta.push(esc(p.address));
+    if (p.price) meta.push(priceHTML(p));
+    meta.push(['', '到处都有', '本地人常去', '本地招牌'][p.local || 2]);
+
     openSheet(
-      '<div class="detail-hero"><h2>' + esc(p.name) + '</h2>' +
-      '<div class="sub">' + (p.kind === 'spot' ? '景点' : '吃') +
-      (p.cuisine ? ' · ' + esc(p.cuisine) : '') + '</div></div>' +
+      '<div class="dhero">' +
+        '<div class="dh-top"><h2>' + esc(p.name) + '</h2>' +
+          '<span class="dh-dist">' + (d != null ? distText(d) : '未定位') + '</span></div>' +
+        '<div class="dh-sub">' + meta.join(' · ') + '</div>' +
+      '</div>' +
+      '<div class="three">' +
+        '<button class="tb ' + (v && v.verdict === 'good' ? 'on good' : '') + '" data-act="good" data-id="' + p.id + '">好吃</button>' +
+        '<button class="tb ' + (v && v.verdict === 'bad' ? 'on bad' : '') + '" data-act="bad" data-id="' + p.id + '">不好吃</button>' +
+        '<button class="tb ' + (wantOf(p.id) ? 'on want' : '') + '" data-act="want" data-id="' + p.id + '">稍后去吃</button>' +
+      '</div>' +
+      '<button class="btn primary wide" data-act="nav" data-id="' + p.id + '">一键导航</button>' +
+      (b ? '<div class="rec">' +
+        '<div class="rec-h">1 位推荐者</div>' +
+        '<div class="rec-top">' + avatarHTML(b) + '<b>' + esc(b.name) + '</b>' +
+          '<span class="rec-src">' + esc(b.platform || '') + '</span>' +
+          '<span class="rec-hit">' + (b.hits && b.hits.total ? '命中 ' + Math.round(relOf(b) * 100) + '%' : '还没验证') + '</span>' +
+        '</div>' +
+        (p.quote ? '<p class="rec-quote">' + esc(p.quote) + '</p>' : '') +
+        ((p.flavors || []).length || p.cuisine
+          ? '<div class="c-tags">' + (p.flavors || []).map(function (f) { return '<i>' + esc(f) + '</i>'; }).join('') +
+            (p.cuisine ? '<i class="soft">' + esc(p.cuisine) + '</i>' : '') + '</div>'
+          : '') +
+      '</div>' : '') +
+      dishHTML +
       (p.kind === 'spot' ? '' :
         '<div class="cmphead"><b>口味 ' + Math.round(t.sim * 100) + '%</b>' +
         (t.mult < 1 ? '<span class="warnmark">已降权</span>' : '') + '</div>') +
       (p.kind === 'spot' ? '' : cmpHTML(p)) +
       (p.kind === 'spot' ? '' : whyHTML(t)) +
-      rows.map(function (r) { return '<div class="kv"><b>' + r[0] + '</b><span>' + r[1] + '</span></div>'; }).join('') +
-      (p.quote ? '<p class="c-quote" style="margin:14px 0">' + esc(p.quote) + '</p>' : '') +
-      (v ? '<div class="kv"><b>我的评分</b><span>' + '★'.repeat(v.rating) + (v.note ? ' · ' + esc(v.note) : '') + '</span></div>' : '') +
+      (p.sourceUrl
+        ? '<div class="kv"><b>来源</b><span><a href="' + esc(p.sourceUrl) + '" target="_blank" rel="noopener">' +
+          esc((p.src && p.src.platform) || '打开原文') + '</a></span></div>'
+        : '') +
+      (v && v.note ? '<div class="kv"><b>我的备注</b><span>' + esc(v.note) + '</span></div>' : '') +
       '<div class="act-row">' +
-        '<button class="btn primary" data-act="nav" data-id="' + p.id + '">导航过去</button>' +
-        (p.kind === 'spot' ? '' : '<button class="btn ghost" data-act="rate" data-id="' + p.id + '">记一顿</button>') +
-      '</div>' +
-      '<div class="btn-row">' +
         '<button class="btn ghost" data-act="editplace" data-id="' + p.id + '">编辑</button>' +
         '<button class="btn danger" data-act="delplace" data-id="' + p.id + '">删除</button>' +
       '</div>'
     );
   }
 
-  function openRate(id) {
+  /* 两个按钮代替五颗星：少想一步，命中率还算得准 */
+  function recordVerdict(id, verdict) {
     var p = placeById(id);
     if (!p) return;
     var v = visitOf(id);
-    var stars = [5, 4, 3, 2, 1].map(function (i) {
-      return '<label><input type="radio" name="rating" value="' + i + '"' +
-        ((v ? v.rating : 4) === i ? ' checked' : '') + '>★</label>';
-    }).join('');
+    var prev = v ? v.verdict : null;
+    var rating = verdict === 'good' ? 4.5 : 1.5;
+    if (v) { v.verdict = verdict; v.rating = rating; v.at = Date.now(); }
+    else S.visits.push({ placeId: id, verdict: verdict, rating: rating, note: '', at: Date.now() });
+
+    var b = bloggerById(p.bloggerId);
+    if (b) {
+      if (!b.hits) b.hits = { good: 0, total: 0 };
+      if (prev == null) {
+        b.hits.total++;
+        if (verdict === 'good') b.hits.good++;
+      } else if (prev !== verdict) {
+        if (prev === 'good') b.hits.good = Math.max(0, b.hits.good - 1);
+        else b.hits.good++;
+      }
+    }
+    save();
+    render();
+    if ($('.sheet')) openPlace(id);
+    var msg = verdict === 'good' ? '记成好吃了' : '记成不好吃了';
+    toast(b && b.hits && b.hits.total ? msg + ' ·「' + b.name + '」命中 ' + Math.round(relOf(b) * 100) + '%' : msg);
+  }
+
+  function toggleWant(id) {
+    var on = !wantOf(id);
+    setWant(id, on);
+    render();
+    if ($('.sheet')) openPlace(id);
+    toast(on ? '存进「稍后去吃」了' : '从「稍后去吃」拿出来了');
+  }
+
+  function openRate(id) {
+    var p = placeById(id);
+    if (!p) return;
     openSheet(
-      '<h3>记一顿 · ' + esc(p.name) + '</h3>' +
-      '<form id="f-rate" data-id="' + id + '">' +
-        '<div class="stars">' + stars + '</div>' +
-        '<label class="f"><span>备注（可选）</span><input type="text" name="note" value="' + esc(v ? v.note : '') + '" placeholder="踩雷了还是真香？具体点"></label>' +
-        '<button class="btn primary" type="submit">记下</button>' +
-      '</form>'
+      '<h3>吃过 ' + esc(p.name) + ' 了？</h3>' +
+      '<div class="three">' +
+        '<button class="tb" data-act="good" data-id="' + id + '">好吃</button>' +
+        '<button class="tb" data-act="bad" data-id="' + id + '">不好吃</button>' +
+      '</div>' +
+      '<p class="hint">只记这两档，比打分快，而且能让推荐你的博主命中率更准。</p>'
     );
   }
 
@@ -1399,28 +1538,8 @@
   function submitRate(e) {
     e.preventDefault();
     var f = e.target, id = f.dataset.id;
-    var p = placeById(id);
-    if (!p) return;
-    var rating = +(f.elements.rating.value || 4);
-    var note = f.elements.note.value.trim();
-    var v = visitOf(id);
-    var prev = v ? v.rating : null;
-    if (v) { v.rating = rating; v.note = note; v.at = Date.now(); }
-    else S.visits.push({ placeId: id, rating: rating, note: note, at: Date.now() });
-
-    var b = bloggerById(p.bloggerId);
-    if (b) {
-      if (!b.hits) b.hits = { good: 0, total: 0 };
-      if (prev == null) {
-        b.hits.total++;
-        if (rating >= 4) b.hits.good++;
-      } else {
-        if (prev >= 4 && rating < 4) b.hits.good = Math.max(0, b.hits.good - 1);
-        if (prev < 4 && rating >= 4) b.hits.good++;
-      }
-    }
-    save(); closeSheet(); render();
-    toast(b ? '记下了 ·「' + b.name + '」命中率 ' + Math.round(relOf(b) * 100) + '%' : '记下了');
+    closeSheet();
+    recordVerdict(id, f.dataset.verdict || 'good');
   }
 
   /* ================= 事件 ================= */
@@ -1477,6 +1596,9 @@
         S.places = S.places.filter(function (p) { return p.id !== id; });
         save(); closeSheet(); render(); toast('已删除'); return;
       }
+      if (act === 'good') { recordVerdict(id, 'good'); return; }
+      if (act === 'bad') { recordVerdict(id, 'bad'); return; }
+      if (act === 'want') { toggleWant(id); return; }
       if (act === 'nav') {
         var p = placeById(id);
         if (p && typeof p.lat === 'number') {
@@ -1589,7 +1711,10 @@
   window.__tm = {
     ranked: ranked, tasteOf: tasteOf, state: state, quizDone: quizDone, typeOf: typeOf, render: render, quizHTML: quizHTML, parseNote: parseNote, moodText: moodText, openAdd: openAdd, locate: locate,
     setMode: function (m) { state.mode = m; return ranked(); },
-    getS: function () { return S; }
+    getS: function () { return S; },
+    openPlace: openPlace, recordVerdict: recordVerdict, toggleWant: toggleWant,
+    extraOf: extraOf, dishesOf: dishesOf, wantOf: wantOf,
+    setTab: function (t) { state.tab = t; }
   };
 })();
 
