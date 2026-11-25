@@ -1,0 +1,1595 @@
+/* 口味地图 · 应用逻辑
+ * 无依赖，纯前端。数据存 localStorage。
+ */
+(function () {
+  'use strict';
+
+  /* ================= 常量 ================= */
+  var KEY = 'tasteMap.v2';
+  var OLD_KEY = 'tasteMap.v1';
+  var CATEGORIES = ['面饭', '火锅', '烧烤', '小吃', '甜品', '咖啡', '家常菜'];
+  var SCENES = ['一人食', '聚餐', '宵夜', '带长辈'];
+  var PRICE = [['1', '人均 <50'], ['2', '人均 50–100'], ['3', '人均 100–200'], ['4', '人均 200+']];
+  var FALLBACK = { lat: 31.2304, lng: 121.4737 };
+  var TILE = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
+
+  /* 口味九维。w 是该维在总分里的权重：辣和咸容易「不能吃」，权重最高。 */
+  var DIMS = [
+    { k: 'spicy', n: '辣', w: 1.6, lo: '怕辣', hi: '无辣不欢' },
+    { k: 'numb', n: '麻', w: 1.2, lo: '怕麻', hi: '藤椒上瘾' },
+    { k: 'sweet', n: '甜', w: 1.2, lo: '不爱甜', hi: '嗜甜' },
+    { k: 'salty', n: '咸', w: 1.5, lo: '清淡', hi: '重咸' },
+    { k: 'sour', n: '酸', w: 0.8, lo: '不酸', hi: '嗜酸' },
+    { k: 'rich', n: '油', w: 1.3, lo: '清爽', hi: '浓油赤酱' },
+    { k: 'fresh', n: '鲜', w: 1.0, lo: '无所谓', hi: '追鲜' },
+    { k: 'smoke', n: '锅气', w: 0.9, lo: '少烟', hi: '焦香' },
+    { k: 'funky', n: '发酵', w: 0.9, lo: '不碰', hi: '越臭越香' }
+  ];
+
+  /* 三种模式的权重。hit 是博主命中率，终于进排序了。 */
+  var MODES = {
+    local: { label: '吃本地', w: { taste: 0.22, local: 0.46, prox: 0.20, hit: 0.12 }, tip: '先挑本地招牌，口味只做过滤' },
+    me: { label: '跟我口味', w: { taste: 0.54, local: 0.14, prox: 0.20, hit: 0.12 }, tip: '先挑口味对得上的，本地特色加分' },
+    half: { label: '对半', w: { taste: 0.38, local: 0.28, prox: 0.20, hit: 0.14 }, tip: '口味和本地各占一半' }
+  };
+
+  /* 「今儿这顿」：临时状态，过夜自动清空。画像管长期，它管此刻。 */
+  var MOOD_DIMS = [
+    { k: 'sweet', n: '甜的' }, { k: 'spicy', n: '辣的' }, { k: 'numb', n: '麻的' },
+    { k: 'fresh', n: '鲜的 / 想喝汤' }, { k: 'rich', n: '浓的 / 油香' }, { k: 'smoke', n: '焦香 / 烤的' },
+    { k: 'sour', n: '酸的' }, { k: 'funky', n: '臭的 / 发酵' }
+  ];
+  var MOOD_INTENT = [{ k: 'new', n: '想尝鲜' }, { k: 'safe', n: '想吃熟的' }];
+  var MOOD_SCENE = [{ k: 'solo', n: '一个人' }, { k: 'two', n: '两个人' }, { k: 'group', n: '一桌人' }];
+  var MOOD_HUNGER = [{ k: 'meal', n: '还不太饿' }, { k: 'starving', n: '很饿了' }];
+  var MOOD_PRICE = [{ k: 0, n: '不限' }, { k: 1, n: '30 以内' }, { k: 2, n: '30–80' }, { k: 3, n: '80–150' }, { k: 4, n: '150+' }];
+
+  /* 口味测试。直标尺给值，情境题做加减。 */
+  var QUIZ = [
+    { q: '你能吃多辣？', d: 'spicy', opts: [
+      { t: '一点辣都不行，微辣都算辣', v: 0 },
+      { t: '微辣可以，中辣就算了', v: 1.5 },
+      { t: '中辣常点，加辣也行', v: 3 },
+      { t: '无辣不欢，辣度拉满', v: 5 }
+    ] },
+    { q: '花椒、藤椒那种「麻」呢？', d: 'numb', opts: [
+      { t: '不喜欢，麻到舌头没知觉很烦', v: 0.5 },
+      { t: '一点点可以，别太冲', v: 2 },
+      { t: '喜欢，藤椒鱼、椒麻鸡会点', v: 4 },
+      { t: '越麻越好', v: 5 }
+    ] },
+    { q: '菜里的甜味？', d: 'sweet', opts: [
+      { t: '咸的菜里放糖我接受不了', v: 0.5 },
+      { t: '微微有点甜可以', v: 2 },
+      { t: '喜欢甜口，红烧、糖醋都爱', v: 4 },
+      { t: '越甜越开心', v: 5 }
+    ] },
+    { q: '咸淡偏好？', d: 'salty', opts: [
+      { t: '越淡越好，咸了很难受', v: 0.5 },
+      { t: '正常家常口味', v: 2 },
+      { t: '稍微重一点更下饭', v: 3.5 },
+      { t: '不咸吃不下', v: 5 }
+    ] },
+    { q: '油和浓度（红烧肉那种油亮）？', d: 'rich', opts: [
+      { t: '清爽为主，油多会腻', v: 0.5 },
+      { t: '正常做法就行', v: 2.5 },
+      { t: '喜欢浓油赤酱、收过汁的', v: 4 },
+      { t: '越油越香', v: 5 }
+    ] },
+    { q: '臭豆腐、酸笋、腐乳这类发酵味？', d: 'funky', opts: [
+      { t: '闻到就躲', v: 0.5 },
+      { t: '能吃，但不主动点', v: 2 },
+      { t: '很爱，会专门找着吃', v: 4.5 }
+    ] },
+    { q: '内脏（毛肚、鸭血、脑花）？', d: 'funky', add: true, opts: [
+      { t: '完全不碰', v: -1 },
+      { t: '部分吃，毛肚鸭血可以', v: 0.5 },
+      { t: '都吃，脑花也来', v: 1.5 }
+    ] },
+    { q: '烧烤、干锅那种烟火焦香？', d: 'smoke', opts: [
+      { t: '不太爱，油烟味受不了', v: 0.5 },
+      { t: '偶尔吃', v: 2.5 },
+      { t: '很爱，锅气是灵魂', v: 4.5 }
+    ] },
+    { q: '「鲜」这件事你多在意？', d: 'fresh', opts: [
+      { t: '无所谓，重口就行', v: 1 },
+      { t: '正常', v: 2.5 },
+      { t: '很在意，清蒸、高汤、鲜活', v: 4 },
+      { t: '为一口鲜愿意跑远', v: 5 }
+    ] },
+    { q: '酸？', d: 'sour', opts: [
+      { t: '不太喜欢酸', v: 0.5 },
+      { t: '正常', v: 2 },
+      { t: '喜欢，酸汤、酸辣都行', v: 4 }
+    ] },
+    { q: '平时多半怎么吃？', multi: 'scenes', opts: [
+      { t: '一人食' }, { t: '聚餐' }, { t: '宵夜' }, { t: '带长辈' }
+    ] },
+    { q: '出门旅游，吃这件事你会？', travel: true, opts: [
+      { t: '必吃当地招牌，来都来了', v: 'local' },
+      { t: '口味优先，合我口味的才去', v: 'me' },
+      { t: '一半一半', v: 'half' }
+    ] },
+    { q: '一顿饭人均接受多少？', price: true, opts: [
+      { t: '< 50', v: 1 }, { t: '50–100', v: 2 }, { t: '100–200', v: 3 }, { t: '200+', v: 4 }
+    ] }
+  ];
+
+  /* 四轴十六型。类型码只是壳，真正的数据是九维向量。 */
+  var TYPES = {
+    '浓甜冲猎': '重口猎手', '浓甜冲稳': '甜辣饭桶', '浓甜柔猎': '酱香探险', '浓甜柔稳': '红烧派',
+    '浓咸冲猎': '江湖猎手', '浓咸冲稳': '下饭王', '浓咸柔猎': '油渣诗人', '浓咸柔稳': '老派本帮',
+    '清甜冲猎': '清爽刺客', '清甜冲稳': '甜辣小白', '清甜柔猎': '蜜汁探索', '清甜柔稳': '白灼派',
+    '清咸冲猎': '藤椒猎手', '清咸冲稳': '椒麻党', '清咸柔猎': '鲜咸老饕', '清咸柔稳': '原味派'
+  };
+
+  /* ================= 小工具 ================= */
+  function $(s, r) { return (r || document).querySelector(s); }
+  function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+  function num(v, d) { return (typeof v === 'number' && isFinite(v)) ? v : d; }
+  function r1(v) { return String(Math.round(v * 10) / 10); }
+  function distText(m) {
+    if (m == null || !isFinite(m)) return '位置未知';
+    return m < 1000 ? Math.round(m) + 'm' : (m / 1000).toFixed(1) + 'km';
+  }
+  function priceText(p) {
+    for (var i = 0; i < PRICE.length; i++) if (PRICE[i][0] === String(p)) return PRICE[i][1];
+    return '';
+  }
+  function toast(msg) {
+    var t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('on');
+    clearTimeout(t._tm);
+    t._tm = setTimeout(function () { t.classList.remove('on'); }, 2100);
+  }
+
+  /* ================= 地理 ================= */
+  var PI = Math.PI, AXIS = 6378245.0, EE = 0.00669342162296594323;
+
+  function outOfChina(lat, lng) {
+    return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271;
+  }
+  function tLat(x, y) {
+    var r = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+    r += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
+    r += (20 * Math.sin(y * PI) + 40 * Math.sin(y / 3 * PI)) * 2 / 3;
+    r += (160 * Math.sin(y / 12 * PI) + 320 * Math.sin(y * PI / 30)) * 2 / 3;
+    return r;
+  }
+  function tLng(x, y) {
+    var r = 300 + x + 2 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+    r += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
+    r += (20 * Math.sin(x * PI) + 40 * Math.sin(x / 3 * PI)) * 2 / 3;
+    r += (150 * Math.sin(x / 12 * PI) + 300 * Math.sin(x / 30 * PI)) * 2 / 3;
+    return r;
+  }
+  /* WGS-84 -> GCJ-02，让手机 GPS 坐标能对齐高德瓦片 */
+  function wgsToGcj(lat, lng) {
+    if (outOfChina(lat, lng)) return { lat: lat, lng: lng };
+    var dLat = tLat(lng - 105, lat - 35), dLng = tLng(lng - 105, lat - 35);
+    var rad = lat / 180 * PI, magic = 1 - EE * Math.pow(Math.sin(rad), 2);
+    var sq = Math.sqrt(magic);
+    dLat = (dLat * 180) / ((AXIS * (1 - EE)) / (magic * sq) * PI);
+    dLng = (dLng * 180) / (AXIS / sq * Math.cos(rad) * PI);
+    return { lat: lat + dLat, lng: lng + dLng };
+  }
+  function haversine(a, b) {
+    var R = 6371000, r = PI / 180;
+    var dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+    var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+
+  /* ================= 地图 ================= */
+  function MiniMap(host, opts) {
+    opts = opts || {};
+    this.host = host;
+    this.z = opts.zoom || 14;
+    this.c = { lat: opts.center.lat, lng: opts.center.lng };
+    this.onView = opts.onView || function () {};
+    this.onMark = opts.onMark || null;
+    this.onTap = opts.onTap || null;
+    this.tiles = {};
+    this.marks = [];
+    this.origin = { x: 0, y: 0 };
+
+    this.layer = document.createElement('div');
+    this.layer.className = 'mm-layer';
+    this.tilesLayer = document.createElement('div');
+    this.tilesLayer.className = 'mm-tiles';
+    this.marksLayer = document.createElement('div');
+    this.marksLayer.className = 'mm-marks';
+    this.layer.appendChild(this.tilesLayer);
+    this.layer.appendChild(this.marksLayer);
+    host.appendChild(this.layer);
+
+    var ctrl = document.createElement('div');
+    ctrl.className = 'mm-ctrl';
+    ctrl.innerHTML = '<button data-mm="in">+</button><button data-mm="out">-</button>';
+    host.appendChild(ctrl);
+
+    var self = this;
+    ctrl.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-mm]');
+      if (!b) return;
+      e.stopPropagation();
+      self.zoomBy(b.dataset.mm === 'in' ? 1 : -1);
+    });
+
+    if (opts.locate) {
+      var loc = document.createElement('button');
+      loc.className = 'mm-locate';
+      loc.textContent = '定位我';
+      host.appendChild(loc);
+      loc.addEventListener('click', function (e) {
+        e.stopPropagation();
+        opts.locate();
+      });
+    }
+    this.bindDrag();
+  }
+
+  MiniMap.prototype.proj = function (lat, lng) {
+    var s = 256 * Math.pow(2, this.z);
+    var x = (lng + 180) / 360 * s;
+    var r = Math.sin(lat * PI / 180);
+    var y = (0.5 - Math.log((1 + r) / (1 - r)) / (4 * PI)) * s;
+    return { x: x, y: y };
+  };
+  MiniMap.prototype.unproj = function (x, y) {
+    var s = 256 * Math.pow(2, this.z);
+    var lng = x / s * 360 - 180;
+    var n = PI - 2 * PI * y / s;
+    var lat = 180 / PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    return { lat: lat, lng: lng };
+  };
+
+  MiniMap.prototype.render = function () {
+    var w = this.host.clientWidth, h = this.host.clientHeight;
+    if (!w || !h) return false;
+    var c = this.proj(this.c.lat, this.c.lng);
+    this.origin = { x: c.x - w / 2, y: c.y - h / 2 };
+    this.layer.style.transform = 'translate(' + (-this.origin.x) + 'px,' + (-this.origin.y) + 'px)';
+    this.tiles_();
+    this.marks_();
+    return true;
+  };
+
+  MiniMap.prototype.tiles_ = function () {
+    var self = this, w = this.host.clientWidth, h = this.host.clientHeight;
+    var o = this.origin, z = this.z, max = Math.pow(2, z);
+    var x0 = Math.floor(o.x / 256), x1 = Math.floor((o.x + w) / 256);
+    var y0 = Math.floor(o.y / 256), y1 = Math.floor((o.y + h) / 256);
+    var need = {};
+    for (var x = x0; x <= x1; x++) {
+      for (var y = y0; y <= y1; y++) {
+        if (y < 0 || y >= max) continue;
+        var wx = ((x % max) + max) % max;
+        need[wx + ':' + y] = { wx: wx, x: x, y: y };
+      }
+    }
+    Object.keys(need).forEach(function (k) {
+      if (self.tiles[k]) return;
+      var a = need[k], img = new Image();
+      img.className = 'mm-tile';
+      img.style.transform = 'translate(' + (a.x * 256) + 'px,' + (a.y * 256) + 'px)';
+      img.src = TILE.replace('{s}', (Math.abs(a.x + a.y) % 4) + 1)
+        .replace('{x}', a.wx).replace('{y}', a.y).replace('{z}', z);
+      self.tilesLayer.appendChild(img);
+      self.tiles[k] = img;
+    });
+    Object.keys(this.tiles).forEach(function (k) {
+      if (!need[k]) { self.tiles[k].remove(); delete self.tiles[k]; }
+    });
+  };
+
+  MiniMap.prototype.marks_ = function () {
+    var self = this;
+    this.marksLayer.textContent = '';
+    this.marks.forEach(function (m) {
+      var p = self.proj(m.lat, m.lng);
+      var wrap = document.createElement('div');
+      wrap.className = 'mm-mark';
+      wrap.style.transform = 'translate(' + p.x + 'px,' + p.y + 'px)';
+      var dot = document.createElement('div');
+      dot.className = m.me ? 'mm-me' : 'mm-dot ' + (m.cls || '');
+      if (m.label && !m.me) {
+        dot.title = m.label;
+        dot.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (self.onMark) self.onMark(m);
+        });
+      }
+      wrap.appendChild(dot);
+      self.marksLayer.appendChild(wrap);
+    });
+  };
+
+  MiniMap.prototype.setMarks = function (arr) { this.marks = arr || []; };
+  MiniMap.prototype.zoomBy = function (d) {
+    this.z = clamp(this.z + d, 9, 18);
+    this.tiles = {};
+    this.tilesLayer.textContent = '';
+    this.render();
+    this.onView(this.c, this.z);
+  };
+  MiniMap.prototype.bindDrag = function () {
+    var self = this, dragging = false, sx = 0, sy = 0, ox = 0, oy = 0, moved = 0;
+    this.host.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('.mm-ctrl, .mm-locate, .mm-dot')) return;
+      dragging = true; moved = 0;
+      sx = e.clientX; sy = e.clientY;
+      ox = self.origin.x; oy = self.origin.y;
+      try { self.host.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    this.host.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var dx = e.clientX - sx, dy = e.clientY - sy;
+      moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
+      self.origin = { x: ox - dx, y: oy - dy };
+      self.layer.style.transform = 'translate(' + (-self.origin.x) + 'px,' + (-self.origin.y) + 'px)';
+      self.tiles_();
+    });
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      var w = self.host.clientWidth, h = self.host.clientHeight;
+      self.c = self.unproj(self.origin.x + w / 2, self.origin.y + h / 2);
+      self.onView(self.c, self.z);
+      if (moved < 6 && self.onTap) {
+        var r = self.host.getBoundingClientRect();
+        var pt = self.unproj(self.origin.x + (e.clientX - r.left), self.origin.y + (e.clientY - r.top));
+        self.onTap(pt);
+      }
+    }
+    this.host.addEventListener('pointerup', end);
+    this.host.addEventListener('pointercancel', function () { dragging = false; });
+  };
+
+  /* ================= 数据 ================= */
+  var S;
+  var state = {
+    tab: 'nearby',
+    mode: 'me',
+    kind: 'all',
+    loc: null,
+    acc: null,
+    locStatus: 'pending',
+    locErr: '',
+    pickMe: false,
+    mapView: null,
+    quiz: null
+  };
+
+  function freshSeed() {
+    var o = JSON.parse(JSON.stringify(window.SEED));
+    o.visits = [];
+    return o;
+  }
+
+  /* 把 9 元数组转成对象 */
+  function arrToVec(a) {
+    var o = {};
+    DIMS.forEach(function (d, i) { o[d.k] = num(a[i], 2.5); });
+    return o;
+  }
+
+  function migrate(o) {
+    if (!o.me) o.me = {};
+    if (!o.me.taste) o.me.taste = arrToVec(window.DIMS.map(function (k) {
+      return window.SEED.me.taste[k];
+    }));
+    if (!o.me.scenes) o.me.scenes = [];
+    if (!o.me.categories) o.me.categories = [];
+    if (!o.visits) o.visits = [];
+    (o.places || []).forEach(function (p) {
+      if (!p.taste && p.kind !== 'spot') {
+        var a = (window.TASTE_PLACES || {})[p.id] || (window.TASTE_BY_CUISINE || {})[p.cuisine];
+        if (a) p.taste = arrToVec(a);
+      }
+    });
+    return o;
+  }
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var o = JSON.parse(raw);
+        if (o && o.places && o.bloggers) return migrate(o);
+      }
+      var old = localStorage.getItem(OLD_KEY);
+      if (old) {
+        var p = JSON.parse(old);
+        if (p && p.places && p.bloggers) {
+          var m = migrate(p);
+          try { localStorage.setItem(KEY, JSON.stringify(m)); localStorage.removeItem(OLD_KEY); } catch (e) {}
+          return m;
+        }
+      }
+    } catch (e) {}
+    return migrate(freshSeed());
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(S)); }
+    catch (e) { toast('保存失败，存储空间可能满了'); }
+  }
+  function placeById(id) {
+    for (var i = 0; i < S.places.length; i++) if (S.places[i].id === id) return S.places[i];
+    return null;
+  }
+  function bloggerById(id) {
+    for (var i = 0; i < S.bloggers.length; i++) if (S.bloggers[i].id === id) return S.bloggers[i];
+    return null;
+  }
+  function visitOf(id) {
+    for (var i = 0; i < S.visits.length; i++) if (S.visits[i].placeId === id) return S.visits[i];
+    return null;
+  }
+  function uid(p) { return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  /* ================= 口味打分 ================= */
+
+  /* 一家店的口味向量。没有就按菜系兜底，并缓存回去。 */
+  function vecOf(p) {
+    if (p.kind === 'spot') return null;
+    if (p.taste) return p.taste;
+    var a = (window.TASTE_PLACES || {})[p.id] || (window.TASTE_BY_CUISINE || {})[p.cuisine];
+    if (!a) return null;
+    p.taste = arrToVec(a);
+    return p.taste;
+  }
+
+  /* 方向性罚分：超出你的期望罚得狠（太辣吃不下），没到位罚得轻（不够甜只是差点意思） */
+  function tasteOf(p) {
+    var me = (S.me && S.me.taste) || {};
+    var v = vecOf(p);
+    if (!v) return { sim: 0.5, mult: 1, good: [], bad: [] };
+
+    var sum = 0, wsum = 0, good = [], bad = [];
+    DIMS.forEach(function (d) {
+      var want = num(me[d.k], 2.5), got = num(v[d.k], 2.5);
+      var over = Math.max(0, got - want), under = Math.max(0, want - got);
+      var sim = 1 - Math.min(1, (1.5 * over + 0.3 * under) / 5);
+      sum += sim * d.w; wsum += d.w;
+      if (over <= 0.7 && under <= 0.7) good.push({ n: d.n, w: d.w });
+      if (over >= 1.5) bad.push({ n: d.n, got: got, want: want, over: over });
+    });
+    var sim = wsum ? sum / wsum : 0.5;
+    /* 拉开差距：加权平均会把所有店挤在 75–85%，
+       做一个对比度拉伸，让「差一点」和「差很多」在排序里真的分开 */
+    sim = clamp((sim - 0.5) / 0.45, 0, 1);
+
+    /* 硬门槛：超过承受线，整体降权 */
+    var mult = 1;
+    var sp = num(me.spicy, 2.5), gp = num(v.spicy, 2.5);
+    if (sp <= 1.5 && gp >= 3) mult *= 0.55;
+    var sa = num(me.salty, 2.5), ga = num(v.salty, 2.5);
+    if (sa <= 1.5 && ga >= 4) mult *= 0.75;
+    var fu = num(me.funky, 2.5), gu = num(v.funky, 2.5);
+    if (fu <= 1.5 && gu >= 3) mult *= 0.6;
+
+    good.sort(function (a, b) { return b.w - a.w; });
+    bad.sort(function (a, b) { return b.over - a.over; });
+    return {
+      sim: sim, mult: mult,
+      good: good.slice(0, 2).map(function (x) { return x.n; }),
+      bad: bad.slice(0, 2)
+    };
+  }
+
+  function relOf(b) {
+    var h = (b && b.hits) || { good: 0, total: 0 };
+    return (h.good + 1) / (h.total + 2);   /* 贝叶斯先验：没数据时 0.5 */
+  }
+  function localOf(p) { return clamp(((p.local || 2) - 1) / 2, 0, 1); }
+
+  function today() {
+    var d = new Date();
+    return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+  }
+  /* 「今儿这顿」：只对今天有效。人本来就会变，所以它和长期画像分开存。 */
+  function moodOf() {
+    if (!S.mood || S.mood.at !== today()) return null;
+    return S.mood;
+  }
+  function moodSave(m) {
+    if (!m) S.mood = null;
+    else { m.at = today(); S.mood = m; }
+    save();
+  }
+  function moodText() {
+    var m = moodOf();
+    if (!m) return '';
+    var bits = (m.dims || []).map(function (k) {
+      var d = MOOD_DIMS.filter(function (x) { return x.k === k; })[0];
+      return d ? d.n : k;
+    });
+    var it = MOOD_INTENT.filter(function (x) { return x.k === m.intent; })[0];
+    if (it) bits.push(it.n);
+    var sc = MOOD_SCENE.filter(function (x) { return x.k === m.scene; })[0];
+    if (sc) bits.push(sc.n);
+    if (m.hungry) bits.push('很饿');
+    var pr = MOOD_PRICE.filter(function (x) { return x.k === m.price; })[0];
+    if (pr && pr.k) bits.push(pr.n);
+    return bits.join(' · ');
+  }
+
+  function scoreOf(p, d, t) {
+    var W = (MODES[state.mode] || MODES.me).w;
+    var b = bloggerById(p.bloggerId);
+    var m = moodOf();
+    var prox = Math.exp(-d / 3000);
+    var wt = W.taste, wl = W.local, wp = W.prox, add = 0;
+    if (m) {
+      /* 很饿 → 距离权重放大；想尝鲜 → 本地度放大；想吃熟的 → 口味权重放大 */
+      if (m.hungry) wp *= 1.8;
+      if (m.intent === 'new') wl *= 1.7;
+      if (m.intent === 'safe') wt *= 1.35;
+      var v = vecOf(p);
+      if (v) {
+        var hit = 0;
+        (m.dims || []).forEach(function (k) { if (num(v[k], 2.5) >= 3.4) hit++; });
+        add = Math.min(0.15, hit * 0.055);
+      }
+    }
+    var wsum = wt + wl + wp + W.hit;
+    var s = (wt * t.sim + wl * localOf(p) + wp * prox + W.hit * relOf(b)) / (wsum || 1);
+    return s * t.mult * (1 + add);
+  }
+
+  function ranked(opt) {
+    opt = opt || {};
+    var base = state.loc || FALLBACK;
+    return S.places
+      .filter(function (p) { return typeof p.lat === 'number' && typeof p.lng === 'number'; })
+      .filter(function (p) { return opt.ignoreKind || state.kind === 'all' || p.kind === state.kind; })
+      .map(function (p) {
+        var d = haversine(base, p);
+        var t = tasteOf(p);
+        var s = scoreOf(p, d, t);
+        if (p.kind === 'spot') s *= 0.8;   /* 景点不跟吃的抢前排 */
+        return { p: p, d: d, t: t, s: s };
+      })
+      .sort(function (a, b) { return b.s - a.s; });
+  }
+
+  /* ================= 渲染：附近 ================= */
+  function locText() {
+    if (state.pickMe) return '在地图上点一下你的位置';
+    if (state.locStatus === 'ok') return '已定位 · 精度 ' + Math.round(state.acc || 0) + ' 米';
+    if (state.locStatus === 'denied') return '未定位 · 距离按示例点算';
+    return '正在定位…';
+  }
+  function modeBtn(v) {
+    return '<button data-act="mode" data-v="' + v + '" class="' + (state.mode === v ? 'on' : '') + '">' +
+      MODES[v].label + '</button>';
+  }
+  function kindChip(v, label) {
+    return '<button class="chip ' + (state.kind === v ? 'on' : '') + '" data-act="kind" data-v="' + v + '">' + label + '</button>';
+  }
+
+  /* 为什么排在这：对上的维度，或者超线的维度 */
+  function whyHTML(t) {
+    if (t.bad && t.bad.length) {
+      return '<div class="why warn">' + t.bad.map(function (b) {
+        return b.n + ' ' + r1(b.got) + ' 超你的 ' + r1(b.want);
+      }).join(' · ') + '</div>';
+    }
+    if (t.good && t.good.length) {
+      return '<div class="why ok">' + t.good.join('、') + ' 都对上了</div>';
+    }
+    return '';
+  }
+
+  function card(it) {
+    var p = it.p, b = bloggerById(p.bloggerId), v = visitOf(p.id), t = it.t;
+    var cls = p.kind === 'spot' ? 'soft' : '';
+    var pills = (p.flavors || []).map(function (f) { return '<i class="' + cls + '">' + esc(f) + '</i>'; });
+    if (p.cuisine) pills.push('<i class="soft">' + esc(p.cuisine) + '</i>');
+    return '' +
+      '<article class="card" data-act="place" data-id="' + p.id + '">' +
+        '<div class="c-top"><h3>' + esc(p.name) + '</h3>' +
+          '<span class="pill ' + (it.s > 0.62 ? 'hot' : '') + '" title="综合分">' + Math.round(it.s * 100) + ' 分</span></div>' +
+        '<div class="c-meta">' +
+          (p.kind === 'spot' ? '' : '<span class="tp">口味 ' + Math.round(t.sim * 100) + '%</span>') +
+          '<span>' + distText(it.d) + '</span>' +
+          (p.local === 3 ? '<span class="lb3">本地招牌</span>' : p.local === 1 ? '<span class="lb1">到处都有</span>' : '') +
+          (p.address ? '<span>' + esc(p.address) + '</span>' : '') +
+          (p.price ? '<span>' + priceText(p.price) + '</span>' : '') +
+          (p.kind === 'spot' ? '<span>景点</span>' : '') + '</div>' +
+        whyHTML(t) +
+        (pills.length ? '<div class="c-tags">' + pills.join('') + '</div>' : '') +
+        (p.dish ? '<div class="c-dish">招牌：' + esc(p.dish) + '</div>' : '') +
+        (p.quote ? '<p class="c-quote">' + esc(p.quote) + '</p>' : '') +
+        '<div class="c-foot"><span class="bdot" style="background:' + (b ? b.color : '#B9AE9D') + '"></span>' +
+          '<span>' + (b ? esc(b.name) : '未标博主') + '</span>' +
+          (b ? (b.hits && b.hits.total ? '<span class="rel">命中 ' + Math.round(relOf(b) * 100) + '%</span>' : '<span class="rel">新博主 · 还没验证</span>') : '') +
+          (v ? '<span class="done">已打卡</span>' : '') + '</div>' +
+      '</article>';
+  }
+
+  function viewNearby() {
+    var items = ranked();
+    var banner = '';
+    if (state.locStatus === 'denied') {
+      banner = '<div class="banner">' + esc(state.locErr || '没拿到位置。') +
+        '<div class="banner-act">' +
+          '<button class="mini" data-act="locate">再试一次</button>' +
+          '<button class="mini ghost" data-act="pickme">在地图上点我的位置</button>' +
+        '</div></div>';
+    } else if (state.locStatus === 'pending') {
+      banner = '<div class="banner">正在定位… 拿到位置后距离会自动刷新。</div>';
+    }
+    var promo = (S.me && !S.me.quizAt)
+      ? '<div class="promo" data-act="quiz">还没做过口味测试 · 花 1 分钟，之后「跟我口味」才准 <b>开始 →</b></div>' : '';
+
+    var top = items[0], whyline = '';
+    if (top) {
+      var bits = [];
+      if (top.p.local === 3) bits.push('本地招牌');
+      else if (top.p.local === 2) bits.push('本地人常去');
+      if (top.p.kind !== 'spot' && top.t.sim >= 0.55) bits.push('口味 ' + Math.round(top.t.sim * 100) + '%');
+      bits.push(distText(top.d));
+      whyline = '<div class="whyline">排第 1 是「' + esc(top.p.name) + '」，因为：' + bits.join(' · ') + '</div>';
+    }
+
+    return '' +
+      '<div class="hdr">' +
+        '<div class="hdr-top"><div><div class="city">' + esc(S.city || '未设城市') + '</div>' +
+        '<div class="loc ' + (state.locStatus === 'ok' ? '' : 'warn') + '">' + locText() + '</div></div>' +
+        '<div class="seg mode">' + modeBtn('local') + modeBtn('me') + modeBtn('half') + '</div></div>' +
+        '<div class="mode-tip">' + MODES[state.mode].tip + '</div>' +
+        moodBar() +
+        whyline +
+      '</div>' +
+      banner + promo +
+      '<div class="mapwrap"><div class="mm" id="map"></div></div>' +
+      '<div class="chips" style="padding:0 16px 8px">' + kindChip('all', '全部') + kindChip('eat', '吃') + kindChip('spot', '逛') + '</div>' +
+      '<div class="list">' +
+        (items.length ? items.map(card).join('') :
+          '<div class="empty"><b>这里还没有推荐</b>点右下角的 + 把博主说的店收进来。<br>收录之后，到这个城市打开就能按距离看。</div>') +
+      '</div>' +
+      '<button class="fab" data-act="add" aria-label="收录一家">+</button>';
+  }
+
+  function mountMap() {
+    var host = $('#map');
+    if (!host) return;
+    var items = ranked().slice(0, 40);
+    var mv = state.mapView;
+    var map = new MiniMap(host, {
+      center: mv ? mv.center : (state.loc || FALLBACK),
+      zoom: mv ? mv.zoom : (state.loc ? 15 : 13),
+      locate: locate,
+      onView: function (c, z) { state.mapView = { center: c, zoom: z }; },
+      onTap: function (pt) {
+        if (!state.pickMe) return;
+        state.pickMe = false;
+        state.loc = { lat: pt.lat, lng: pt.lng };
+        state.acc = 0;
+        state.locStatus = 'ok';
+        state.locErr = '';
+        state.mapView = { center: state.loc, zoom: 15 };
+        render();
+        toast('位置就设在这儿了，距离按它算');
+      },
+      onMark: function (m) { if (m.id) openPlace(m.id); }
+    });
+    var marks = items.map(function (it) {
+      var sim = it.t.sim;
+      return {
+        id: it.p.id, lat: it.p.lat, lng: it.p.lng, label: it.p.name,
+        cls: it.p.kind === 'spot' ? 'spot' : (sim > 0.78 ? 'hot' : sim > 0.6 ? 'warm' : '')
+      };
+    });
+    if (state.loc) marks.push({ me: true, lat: state.loc.lat, lng: state.loc.lng });
+    map.setMarks(marks);
+    requestAnimationFrame(function () { map.render(); });
+  }
+
+  /* ================= 渲染：打卡 ================= */
+  function viewCheckin() {
+    var visited = [], pending = [];
+    var items = ranked({ ignoreKind: true }).filter(function (it) { return it.p.kind === 'eat'; });
+    items.forEach(function (it) { (visitOf(it.p.id) ? visited : pending).push(it); });
+    var sum = 0;
+    visited.forEach(function (it) { sum += visitOf(it.p.id).rating; });
+    var avg = visited.length ? (sum / visited.length).toFixed(1) : '—';
+    var best = null, bestR = 0;
+    S.bloggers.forEach(function (b) {
+      var r = relOf(b);
+      if ((b.hits && b.hits.total >= 2) && r > bestR && r > 0.6) { bestR = r; best = b; }
+    });
+
+    var pendingHTML = pending.slice(0, 8).map(function (it) {
+      return '<article class="card" data-act="rate" data-id="' + it.p.id + '">' +
+        '<div class="c-top"><h3>' + esc(it.p.name) + '</h3><span class="pill">' + distText(it.d) + '</span></div>' +
+        '<div class="c-meta"><span>' + (it.p.dish ? esc(it.p.dish) : '') + '</span><span>点一下记一顿</span></div>' +
+        '</article>';
+    }).join('');
+
+    var doneHTML = visited.map(function (it) {
+      var v = visitOf(it.p.id);
+      return '<article class="card" data-act="rate" data-id="' + it.p.id + '">' +
+        '<div class="c-top"><h3>' + esc(it.p.name) + '</h3>' +
+        '<span class="pill hot">' + '★'.repeat(v.rating) + '</span></div>' +
+        (v.note ? '<p class="c-quote">' + esc(v.note) + '</p>' : '') +
+        '</article>';
+    }).join('');
+
+    return '' +
+      '<div class="hdr"><div class="hdr-top"><div><div class="city">打卡</div>' +
+      '<div class="loc">吃完记一笔，系统才知道哪个博主靠谱</div></div></div></div>' +
+      '<div class="stats">' +
+        '<div class="stat"><b>' + visited.length + '</b><span>已打卡</span></div>' +
+        '<div class="stat"><b>' + avg + '</b><span>平均分</span></div>' +
+        '<div class="stat"><b>' + (best ? '★' + best.name : '—') + '</b><span>目前最准</span></div>' +
+      '</div>' +
+      '<div class="section-title">待打卡</div>' +
+      '<div class="list">' + (pendingHTML || '<div class="empty">附近都吃过了。</div>') + '</div>' +
+      '<div class="section-title">已打卡</div>' +
+      '<div class="list">' + (doneHTML || '<div class="empty">还没有打卡记录。</div>') + '</div>';
+  }
+
+  /* ================= 渲染：我的 ================= */
+  function chipToggle(act, on, label) {
+    return '<button class="chip ' + (on ? 'on' : '') + '" data-act="' + act + '" data-v="' + label + '">' + label + '</button>';
+  }
+
+  function typeOf(v) {
+    var a = v.rich >= 2.8 ? '浓' : '清';
+    var b = v.sweet >= v.salty ? '甜' : '咸';
+    var c = (num(v.spicy, 0) + num(v.numb, 0)) / 2 >= 2.5 ? '冲' : '柔';
+    var d = num(v.funky, 0) >= 2.2 ? '猎' : '稳';
+    var code = a + b + c + d;
+    return { code: code, name: TYPES[code] || '混合派' };
+  }
+
+  function barsHTML(taste) {
+    return '<div class="prof">' + DIMS.map(function (d) {
+      return '<div class="prow"><b>' + d.n + '</b>' +
+        '<div class="bar"><i style="width:' + (clamp(num(taste[d.k], 2.5), 0, 5) / 5 * 100) + '%"></i></div>' +
+        '<em>' + r1(num(taste[d.k], 2.5)) + '</em></div>';
+    }).join('') + '</div>';
+  }
+
+  function viewMine() {
+    var me = S.me || {};
+    var taste = me.taste || {};
+    var ty = typeOf(taste);
+    var unlocated = S.places.filter(function (p) { return typeof p.lat !== 'number'; });
+    var bloggerHTML = S.bloggers.map(function (b) {
+      return '<div class="b-item" data-act="editblogger" data-id="' + b.id + '">' +
+        '<span class="avatar" style="background:' + b.color + '">' + esc(b.name.slice(0, 1)) + '</span>' +
+        '<div class="b-info"><div class="b-name">' + esc(b.name) +
+          (b.platform ? '<small>' + esc(b.platform) + '</small>' : '') + '</div>' +
+          '<div class="b-tags">' + (b.flavors || []).map(function (f) { return '<i>' + esc(f) + '</i>'; }).join('') + '</div></div>' +
+        '<div class="relbar"><b>' + Math.round(relOf(b) * 100) + '%</b><span>命中率</span>' +
+          '<div class="bar"><i style="width:' + Math.round(relOf(b) * 100) + '%"></i></div></div>' +
+      '</div>';
+    }).join('');
+
+    return '' +
+      '<div class="hdr"><div class="hdr-top"><div><div class="city">我的</div>' +
+      '<div class="loc">九维口味向量 · 改完立刻影响「跟我口味」的排序</div></div></div></div>' +
+
+      '<div class="typebox">' +
+        '<div class="tname">' + ty.name + '</div>' +
+        '<div class="tcode">' + ty.code + ' · 浓淡 / 甜咸 / 冲柔 / 猎稳</div>' +
+        '<div class="tsub">类型码只是好记的壳，(code 里的四个字) 具体还是下面这九个数在算。</div>' +
+        '<button class="btn ghost" data-act="quiz">' + (me.quizAt ? '重做口味测试' : '做口味测试') + '</button>' +
+      '</div>' +
+
+      '<div class="section-title">口味强度（拖一下试试）</div>' +
+      '<div class="dims">' + DIMS.map(function (d) {
+        var v = clamp(num(taste[d.k], 2.5), 0, 5);
+        return '<label class="dim"><span>' + d.n + '</span>' +
+          '<input type="range" min="0" max="5" step="0.5" value="' + v + '" data-dim="' + d.k + '">' +
+          '<em>' + r1(v) + '</em></label>' +
+          '<div class="dhint">' + d.lo + ' ← → ' + d.hi + '</div>';
+      }).join('') + '</div>' +
+
+      '<div class="section-title">常去的场景</div>' +
+      '<div class="chips wrap" style="padding:0 16px">' +
+        SCENES.map(function (f) { return chipToggle('me-scene', (me.scenes || []).indexOf(f) >= 0, f); }).join('') +
+      '</div>' +
+
+      '<div class="section-title">博主 · ' + S.bloggers.length + ' 位</div>' +
+      '<div class="list">' + (bloggerHTML || '<div class="empty">还没有博主。</div>') + '</div>' +
+      '<div style="padding:0 16px"><button class="btn ghost" data-act="addblogger">+ 添加博主</button></div>' +
+
+      (unlocated.length ? '<div class="section-title">还没定位置的 ' + unlocated.length + ' 家</div>' +
+        '<div class="list">' + unlocated.map(function (p) {
+          return '<div class="b-item" data-act="place" data-id="' + p.id + '">' +
+            '<div class="b-info"><div class="b-name">' + esc(p.name) + '</div>' +
+            '<div class="b-tags"><i>打开后可用「用当前位置」定住</i></div></div></div>';
+        }).join('') + '</div>' : '') +
+
+      '<div class="section-title">数据</div>' +
+      '<div style="padding:0 16px 24px">' +
+        '<button class="btn ghost" data-act="export">导出备份</button>' +
+        '<button class="btn ghost" data-act="import">导入备份</button>' +
+        '<button class="btn danger" data-act="reset">恢复示例数据</button>' +
+        '<input type="file" id="importFile" accept="application/json" style="display:none">' +
+      '</div>';
+  }
+
+  /* ================= 今儿这顿（临时状态） ================= */
+  function moodBar() {
+    var m = moodOf();
+    if (!m) {
+      return '<button class="moodbar" data-act="mood"><b>＋</b> 今儿这顿想吃点什么？' +
+        '<span>只在今天生效，不动你的长期口味</span></button>';
+    }
+    return '<div class="moodbar on"><span class="mtext">今儿：' + esc(moodText() || '随便') + '</span>' +
+      '<button class="mini" data-act="mood">改</button>' +
+      '<button class="mini" data-act="mood-clear">清空</button></div>';
+  }
+
+  function moodChip(act, on, label, v) {
+    return '<button class="chip ' + (on ? 'on' : '') + '" data-act="' + act + '" data-v="' + v + '">' + label + '</button>';
+  }
+
+  function openMood() {
+    var m = moodOf() || { dims: [], intent: '', scene: '', hungry: false, price: 0 };
+    var h = '<div class="sheet-h">今儿这顿</div>' +
+      '<div class="sheet-sub">只影响今天的排序，过夜自动清空。你的长期口味在「我的」里，这里不动它。</div>' +
+      '<div class="sheet-k">想吃这一口<span>最多 3 个</span></div>' +
+      '<div class="chips wrap">' + MOOD_DIMS.map(function (d) {
+        return moodChip('mood-dim', (m.dims || []).indexOf(d.k) >= 0, d.n, d.k);
+      }).join('') + '</div>' +
+      '<div class="sheet-k">想怎么吃</div>' +
+      '<div class="chips wrap">' + MOOD_INTENT.map(function (d) {
+        return moodChip('mood-intent', m.intent === d.k, d.n, d.k);
+      }).join('') + '</div>' +
+      '<div class="sheet-k">几个人</div>' +
+      '<div class="chips wrap">' + MOOD_SCENE.map(function (d) {
+        return moodChip('mood-scene', m.scene === d.k, d.n, d.k);
+      }).join('') + '</div>' +
+      '<div class="sheet-k">饿不饿</div>' +
+      '<div class="chips wrap">' + MOOD_HUNGER.map(function (d) {
+        return moodChip('mood-hunger', (d.k === 'starving') === !!m.hungry, d.n, d.k);
+      }).join('') + '</div>' +
+      '<div class="sheet-k">人均</div>' +
+      '<div class="chips wrap">' + MOOD_PRICE.map(function (d) {
+        return moodChip('mood-price', num(m.price, 0) === d.k, d.n, String(d.k));
+      }).join('') + '</div>' +
+      '<div class="act-row"><button class="btn primary" data-act="mood-done">就看今天的</button></div>';
+    openSheet(h);
+  }
+
+  function moodEdit(fn) {
+    var m = moodOf() || { dims: [], intent: '', scene: '', hungry: false, price: 0 };
+    m = JSON.parse(JSON.stringify(m));
+    fn(m);
+    if (!m.dims.length && !m.intent && !m.scene && !m.hungry && !m.price) moodSave(null);
+    else moodSave(m);
+    openMood();
+  }
+
+  /* ================= 收录入口 ================= */
+  function openAdd() {
+    openSheet('<div class="sheet-h">收一条推荐</div>' +
+      '<div class="sheet-sub">最快的方式：在小红书 / 抖音点「分享 → 复制」，把文字粘进来，自动认出店名、菜、价格。位置再在地图上点一下。</div>' +
+      '<div class="act-row"><button class="btn primary" data-act="import">粘贴一条（推荐）</button></div>' +
+      '<div class="act-row"><button class="btn ghost" data-act="manual">空白手填</button></div>' +
+      '<div class="act-row"><button class="btn ghost" data-act="addblogger">先加一位博主</button></div>');
+  }
+
+  function openImport() {
+    openSheet('<div class="sheet-h">粘贴一条推荐</div>' +
+      '<div class="sheet-sub">整段笔记文字、带链接的文字都行。</div>' +
+      '<textarea id="pasteBox" class="paste" rows="6" placeholder="例：📍阿娘面 思南路36号 人均50 黄鱼面绝了，汤是白的，咸菜现炒 https://xhslink.com/abc"></textarea>' +
+      '<div class="act-row two"><button class="btn ghost" data-act="paste-clip">从剪贴板读</button>' +
+      '<button class="btn primary" data-act="parse">识别</button></div>' +
+      '<div class="hint" id="pasteHint">为什么不能只丢链接：小红书/抖音的页面，浏览器跨域读不了，这个版本没有后台。所以链接会存下来（方便回看），但店名这些得靠文字。</div>');
+  }
+
+  function readClip() {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      toast('这个浏览器不给读剪贴板，长按输入框粘贴'); return;
+    }
+    navigator.clipboard.readText().then(function (t) {
+      if (!t) { toast('剪贴板是空的'); return; }
+      var box = $('#pasteBox');
+      if (box) { box.value = t; box.focus(); }
+      toast('已填入，点「识别」');
+    })['catch'](function () {
+      toast('读不了剪贴板（要 https，或你点了拒绝），长按输入框粘贴');
+    });
+  }
+
+  /* 从一段笔记文字里抠出店名 / 菜 / 价格 / 地址 / 链接 */
+  function parseNote(text) {
+    var t = String(text || '').replace(/\r/g, '');
+    var out = { name: '', dish: '', address: '', price: 0, url: '', platform: '' };
+    var mu = t.match(/https?:\/\/[^\s，。、）)]+/);
+    if (mu) {
+      out.url = mu[0];
+      if (/xhslink|xiaohongshu/.test(out.url)) out.platform = '小红书';
+      else if (/douyin|iesdouyin/.test(out.url)) out.platform = '抖音';
+      else if (/bilibili|b23\.tv/.test(out.url)) out.platform = 'B站';
+      else if (/weibo/.test(out.url)) out.platform = '微博';
+      else if (/dianping|meituan/.test(out.url)) out.platform = '点评';
+      else out.platform = '链接';
+    }
+    var body = t.replace(/https?:\/\/[^\s，。、）)]+/g, ' ');
+
+    var mp = body.match(/(?:人均|平均|花了|一个人|大约|差不多)\s*(\d{2,3})/) || body.match(/(\d{2,3})\s*(?:块|元)/);
+    if (mp) {
+      var n = +mp[1];
+      out.price = n <= 40 ? 1 : n <= 90 ? 2 : n <= 180 ? 3 : 4;
+    }
+    var ma = body.match(/([\u4e00-\u9fa5A-Za-z0-9]{2,12}(?:路|街|弄|道|巷|里)[\dA-Za-z\-]{0,6}[号弄]?)/);
+    if (ma) out.address = ma[1];
+
+    var mn = body.match(/(?:店名|餐厅|位置|📍|🏠)\s*[：: ]?\s*([^\n，。,！!?？]{2,20})/);
+    if (mn) out.name = mn[1].trim();
+    if (!out.name) {
+      var mq = body.match(/[《【]([^》】]{2,16})[》】]/);
+      if (mq && /(店|馆|楼|记|面|饭|食|茶|咖啡|厨房)/.test(mq[1])) out.name = mq[1];
+    }
+    if (!out.name) {
+      var SUF = /(店|馆|楼|记|面|粉|坊|居|苑|屋|烧|烤|菜|茶|糖|饺|包|粥|锅|串|饼|饭|堂|舍|灶|厨|栈|庭|院|轩|斋|阁|档|摊|铺|吧|食堂|小馆)/;
+      var lines = body.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      for (var i = 0; i < lines.length; i++) {
+        var s = lines[i].replace(/^[📍🏠🍜🍲✨·\-\s\d.、]+/, '');
+        if (s.length >= 2 && s.length <= 14 && SUF.test(s) && !/[。，！？]/.test(s)) { out.name = s; break; }
+      }
+    }
+    /* 整段话挤成一行时，从中间捞一个「XX店/面/馆」 */
+    if (!out.name) {
+      var m2 = body.match(/([\u4e00-\u9fa5A-Za-z]{2,8}(?:店|馆|楼|记|粉|坊|居|屋|灶|厨|轩|斋|阁|铺|吧|食堂|小馆|面|饭|菜))/);
+      if (m2) {
+        var nm = m2[1], PRE = /^(?:有家|这家|那家|一家|一个|上海|北京|广州|深圳|成都|杭州|西安|重庆|南京|武汉|苏州|在|去|吃|的|是)/;
+        while (PRE.test(nm) && nm.length > 2) nm = nm.replace(PRE, '');
+        out.name = nm;
+      }
+    }    var md = body.match(/(?:必点|招牌|推荐|点了|吃了|一定要点|必吃)\s*[：: ]?\s*([^\n，。！]{2,16})/);
+    if (md) out.dish = md[1].trim();
+    return out;
+  }
+
+  function doParse() {
+    var box = $('#pasteBox');
+    var text = box ? box.value : '';
+    if (!text.trim()) { toast('先粘点东西进来'); return; }
+    var r = parseNote(text);
+    closeSheet();
+    setTimeout(function () {
+      openPlaceForm({
+        name: r.name, dish: r.dish, address: r.address,
+        price: r.price || undefined, sourceUrl: r.url,
+        quote: r.dish ? '' : text.slice(0, 60),
+        src: r
+      });
+      toast(r.name ? '认出来了：' + r.name + '（位置还得点一下）' : '没认出店名，手动填一下');
+    }, 140);
+  }
+
+  /* ================= 渲染总入口 ================= */
+  function render() {
+    var v = $('#view');
+    var scroll = v.scrollTop;
+    if (state.tab === 'nearby') v.innerHTML = viewNearby();
+    else if (state.tab === 'checkin') v.innerHTML = viewCheckin();
+    else v.innerHTML = viewMine();
+    v.scrollTop = scroll;
+    $$('#tabs .tab').forEach(function (t) {
+      t.classList.toggle('on', t.dataset.tab === state.tab);
+    });
+    if (state.tab === 'nearby') mountMap();
+  }
+
+  /* ================= 弹层 ================= */
+  function openSheet(html) {
+    var root = $('#sheet-root');
+    root.innerHTML = '<div class="mask"></div><div class="sheet"><div class="grip"></div>' + html + '</div>';
+    root.classList.add('open');
+    $('.mask', root).addEventListener('click', closeSheet);
+  }
+  function closeSheet() {
+    var root = $('#sheet-root');
+    root.classList.remove('open');
+    setTimeout(function () { if (!root.classList.contains('open')) root.innerHTML = ''; }, 260);
+  }
+
+  /* 你 vs 这家的九维对照 */
+  function cmpHTML(p) {
+    var me = (S.me && S.me.taste) || {};
+    var v = vecOf(p);
+    if (!v) return '';
+    return '<div class="cmp">' + DIMS.map(function (d) {
+      var a = clamp(num(me[d.k], 2.5), 0, 5), b = clamp(num(v[d.k], 2.5), 0, 5);
+      return '<div class="crow"><b>' + d.n + '</b>' +
+        '<div class="cbar"><i class="you" style="width:' + (a / 5 * 100) + '%"></i></div>' +
+        '<div class="cbar"><i class="it" style="width:' + (b / 5 * 100) + '%"></i></div></div>';
+    }).join('') + '</div>' +
+      '<div class="clegend"><span><i class="you"></i>你</span><span><i class="it"></i>这家</span></div>';
+  }
+
+  function openPlace(id) {
+    var p = placeById(id);
+    if (!p) return;
+    var b = bloggerById(p.bloggerId);
+    var d = state.loc ? haversine(state.loc, p) : null;
+    var v = visitOf(p.id);
+    var t = tasteOf(p);
+    var rows = [];
+    if (p.address) rows.push(['地址', esc(p.address)]);
+    rows.push(['距离', d != null ? distText(d) : '未定位']);
+    if (p.cuisine) rows.push(['菜系', esc(p.cuisine)]);
+    rows.push(['本地度', ['', '到处都有', '本地人常去', '本地招牌'][p.local || 2]]);
+    if (p.price) rows.push(['人均', priceText(p.price)]);
+    if ((p.flavors || []).length) rows.push(['味型', p.flavors.map(esc).join(' · ')]);
+    if (p.dish) rows.push(['招牌', esc(p.dish)]);
+    rows.push(['博主', b ? esc(b.name) + '（命中 ' + Math.round(relOf(b) * 100) + '%）' : '未标注']);
+    if (p.sourceUrl) {
+      rows.push(['来源', '<a href="' + esc(p.sourceUrl) + '" target="_blank" rel="noopener">' +
+        esc((p.src && p.src.platform) || '打开原文') + '</a>']);
+    }
+
+    openSheet(
+      '<div class="detail-hero"><h2>' + esc(p.name) + '</h2>' +
+      '<div class="sub">' + (p.kind === 'spot' ? '景点' : '吃') +
+      (p.cuisine ? ' · ' + esc(p.cuisine) : '') + '</div></div>' +
+      (p.kind === 'spot' ? '' :
+        '<div class="cmphead"><b>口味 ' + Math.round(t.sim * 100) + '%</b>' +
+        (t.mult < 1 ? '<span class="warnmark">已降权</span>' : '') + '</div>') +
+      (p.kind === 'spot' ? '' : cmpHTML(p)) +
+      (p.kind === 'spot' ? '' : whyHTML(t)) +
+      rows.map(function (r) { return '<div class="kv"><b>' + r[0] + '</b><span>' + r[1] + '</span></div>'; }).join('') +
+      (p.quote ? '<p class="c-quote" style="margin:14px 0">' + esc(p.quote) + '</p>' : '') +
+      (v ? '<div class="kv"><b>我的评分</b><span>' + '★'.repeat(v.rating) + (v.note ? ' · ' + esc(v.note) : '') + '</span></div>' : '') +
+      '<div class="act-row">' +
+        '<button class="btn primary" data-act="nav" data-id="' + p.id + '">导航过去</button>' +
+        (p.kind === 'spot' ? '' : '<button class="btn ghost" data-act="rate" data-id="' + p.id + '">记一顿</button>') +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn ghost" data-act="editplace" data-id="' + p.id + '">编辑</button>' +
+        '<button class="btn danger" data-act="delplace" data-id="' + p.id + '">删除</button>' +
+      '</div>'
+    );
+  }
+
+  function openRate(id) {
+    var p = placeById(id);
+    if (!p) return;
+    var v = visitOf(id);
+    var stars = [5, 4, 3, 2, 1].map(function (i) {
+      return '<label><input type="radio" name="rating" value="' + i + '"' +
+        ((v ? v.rating : 4) === i ? ' checked' : '') + '>★</label>';
+    }).join('');
+    openSheet(
+      '<h3>记一顿 · ' + esc(p.name) + '</h3>' +
+      '<form id="f-rate" data-id="' + id + '">' +
+        '<div class="stars">' + stars + '</div>' +
+        '<label class="f"><span>备注（可选）</span><input type="text" name="note" value="' + esc(v ? v.note : '') + '" placeholder="踩雷了还是真香？具体点"></label>' +
+        '<button class="btn primary" type="submit">记下</button>' +
+      '</form>'
+    );
+  }
+
+  /* ================= 口味测试 ================= */
+  function quizHTML() {
+    var q = state.quiz, i = q.i;
+    if (q.done) {
+      var ty = typeOf(q.vec);
+      return '<h3>你的口味画像</h3>' +
+        '<div class="typebox big"><div class="tname">' + ty.name + '</div>' +
+        '<div class="tcode">' + ty.code + '</div>' +
+        '<div class="tsub">这四个字只是好记的名字，真正在算的是下面九个数。</div></div>' +
+        barsHTML(q.vec) +
+        '<p class="c-quote" style="margin:14px 0">已经存下了。回「附近」看排序，顶部的模式切换也会跟着你的旅游习惯。</p>' +
+        '<button class="btn primary" data-act="quiz-finish">收下这份画像</button>';
+    }
+    var cur = QUIZ[i], ans = q.ans[i];
+    return '<div class="qtop"><span>' + (i + 1) + ' / ' + QUIZ.length + '</span>' +
+      '<div class="qbar"><i style="width:' + ((i) / QUIZ.length * 100) + '%"></i></div></div>' +
+      '<h2 class="qtitle">' + cur.q + '</h2>' +
+      '<div class="qopts">' + cur.opts.map(function (o, j) {
+        var on = cur.multi ? (ans || []).indexOf(j) >= 0 : ans === j;
+        return '<button class="qopt ' + (on ? 'on' : '') + '" data-act="quiz-opt" data-i="' + j + '">' + o.t + '</button>';
+      }).join('') + '</div>' +
+      '<div class="qnav">' +
+        (i > 0 ? '<button class="btn ghost" data-act="quiz-prev">上一题</button>' : '') +
+        (i < QUIZ.length - 1
+          ? '<button class="btn ' + (cur.multi ? 'primary' : 'ghost') + '" data-act="quiz-next">下一题</button>'
+          : '<button class="btn primary" data-act="quiz-done">看结果</button>') +
+      '</div>';
+  }
+
+  function paintQuiz() {
+    var sh = $('.sheet');
+    if (sh) sh.innerHTML = quizHTML();
+  }
+
+  function openQuiz() {
+    state.quiz = { i: 0, ans: {}, vec: null, done: false, travel: 'me', price: 2, scenes: [] };
+    openSheet(quizHTML());
+  }
+
+  function quizPick(j) {
+    var q = state.quiz, cur = QUIZ[q.i];
+    if (cur.multi) {
+      var arr = q.ans[q.i] || (q.ans[q.i] = []);
+      var k = arr.indexOf(j);
+      if (k >= 0) arr.splice(k, 1); else arr.push(j);
+      paintQuiz();
+      return;
+    }
+    q.ans[q.i] = j;
+    paintQuiz();
+    if (q.i < QUIZ.length - 1) setTimeout(function () { state.quiz.i++; paintQuiz(); }, 150);
+  }
+
+  function quizNext() {
+    if (state.quiz.i < QUIZ.length - 1) { state.quiz.i++; paintQuiz(); }
+  }
+  function quizPrev() {
+    if (state.quiz.i > 0) { state.quiz.i--; paintQuiz(); }
+  }
+
+  function quizDone() {
+    var q = state.quiz;
+    var v = {}, d;
+    DIMS.forEach(function (x) { v[x.k] = 2.5; });   /* 中性起点 */
+    var travel = 'me', price = 2, scenes = [];
+    QUIZ.forEach(function (cur, i) {
+      var a = q.ans[i];
+      if (cur.multi) {
+        (a || []).forEach(function (j) { scenes.push(cur.opts[j].t); });
+        return;
+      }
+      if (a == null) return;
+      var o = cur.opts[a];
+      if (cur.travel) { travel = o.v; return; }
+      if (cur.price) { price = o.v; return; }
+      if (!cur.d) return;
+      if (cur.add) v[cur.d] = clamp(v[cur.d] + o.v, 0, 5);
+      else v[cur.d] = clamp(o.v, 0, 5);
+    });
+    q.vec = v;
+    q.travel = travel;
+    q.price = price;
+    q.scenes = scenes;
+    q.done = true;
+    paintQuiz();
+  }
+
+  function quizFinish() {
+    var q = state.quiz;
+    if (!S.me) S.me = {};
+    S.me.taste = q.vec;
+    S.me.quizAt = Date.now();
+    if (q.scenes.length) S.me.scenes = q.scenes;
+    if (q.price) S.me.price = q.price;
+    state.mode = q.travel || 'me';
+    save();
+    closeSheet();
+    if (state.tab !== 'nearby') state.tab = 'nearby';
+    render();
+    toast('画像存好了 · 现在是「' + MODES[state.mode].label + '」');
+  }
+
+  /* ================= 表单 ================= */
+  function tasteRowOpts(cur) {
+    var out = '';
+    for (var i = 0; i <= 10; i++) {
+      var val = i / 2;
+      out += '<option value="' + val + '"' + (Math.abs(cur - val) < 0.01 ? ' selected' : '') + '>' + r1(val) + '</option>';
+    }
+    return out;
+  }
+
+  function placeForm(p) {
+    p = p || {};
+    var isEdit = !!p.id;
+    function opt(list, cur) {
+      return list.map(function (x) { return '<option value="' + x + '"' + (cur === x ? ' selected' : '') + '>' + x + '</option>'; }).join('');
+    }
+    var base = p.taste || (p.cuisine && (window.TASTE_BY_CUISINE || {})[p.cuisine]) || null;
+    var baseVec = base ? (Array.isArray(base) ? arrToVec(base) : base) : null;
+    var tasteCells = DIMS.map(function (d) {
+      var v = baseVec ? num(baseVec[d.k], 2.5) : 2.5;
+      return '<label class="f tcell"><span>' + d.n + '</span>' +
+        '<select name="t_' + d.k + '">' + tasteRowOpts(v) + '</select></label>';
+    }).join('');
+    var bopts = ['<option value="">不标博主</option>'].concat(S.bloggers.map(function (b) {
+      return '<option value="' + b.id + '"' + (p.bloggerId === b.id ? ' selected' : '') + '>' + esc(b.name) + '</option>';
+    })).join('');
+
+    return '<h3>' + (isEdit ? '编辑' : '收录一家') + '</h3>' +
+      '<form id="f-place" data-id="' + (p.id || '') + '">' +
+        '<label class="f"><span>店名 / 地点名</span><input type="text" name="name" required value="' + esc(p.name || '') + '" placeholder="视频里说的那家"></label>' +
+        '<div class="row2">' +
+          '<label class="f"><span>类型</span><select name="kind"><option value="eat"' + (p.kind !== 'spot' ? ' selected' : '') + '>吃</option><option value="spot"' + (p.kind === 'spot' ? ' selected' : '') + '>逛（景点）</option></select></label>' +
+          '<label class="f"><span>城市</span><input type="text" name="city" value="' + esc(p.city || S.city || '') + '"></label>' +
+        '</div>' +
+        '<div class="row2">' +
+          '<label class="f"><span>品类</span><select name="category">' + opt([''].concat(CATEGORIES), p.category || '') + '</select></label>' +
+          '<label class="f"><span>人均</span><select name="price">' + opt(['1', '2', '3', '4'], String(p.price || 2)) + '</select></label>' +
+        '</div>' +
+        '<div class="row2">' +
+          '<label class="f"><span>场景</span><select name="scene">' + opt([''].concat(SCENES), p.scene || '') + '</select></label>' +
+          '<label class="f"><span>本地度</span><select name="local">' +
+            '<option value="3"' + ((p.local || 2) === 3 ? ' selected' : '') + '>本地招牌</option>' +
+            '<option value="2"' + ((p.local || 2) === 2 ? ' selected' : '') + '>本地人常去</option>' +
+            '<option value="1"' + (p.local === 1 ? ' selected' : '') + '>到处都有</option>' +
+          '</select></label>' +
+        '</div>' +
+        '<label class="f"><span>推荐人</span><select name="bloggerId">' + bopts + '</select></label>' +
+        '<label class="f"><span>招牌菜</span><input type="text" name="dish" value="' + esc(p.dish || '') + '" placeholder="红烧肉、生煎"></label>' +
+        '<div class="field"><span>口味（这家有多辣 / 多甜 / 多咸…）</span><div class="tgrid">' + tasteCells + '</div></div>' +
+        '<label class="f"><span>博主原话 / 备注</span><textarea name="quote" placeholder="他原话怎么说的，抄一句最有用的">' + esc(p.quote || '') + '</textarea></label>' +
+        '<label class="f"><span>视频 / 笔记链接</span><input type="text" name="sourceUrl" value="' + esc(p.sourceUrl || '') + '" placeholder="抖音、小红书链接，方便回看"></label>' +
+        '<label class="f"><span>地址</span><input type="text" name="address" value="' + esc(p.address || '') + '"></label>' +
+        '<div class="field"><span>位置（点地图选，或直接用当前定位）</span>' +
+          '<div class="mm" id="pickmap" style="height:200px"></div>' +
+          '<div class="loc" id="pickinfo" style="margin-top:6px">' + (p.lat ? '已选：' + p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) : '还没选位置') + '</div>' +
+        '</div>' +
+        '<input type="hidden" name="srcPlatform" value="' + esc((p.src && p.src.platform) || '') + '">' +
+        '<input type="hidden" name="srcRaw" value="' + esc(String((p.src && p.src.raw) || '').slice(0, 300)) + '">' +
+        '<input type="hidden" name="lat" value="' + (p.lat || '') + '">' +
+        '<input type="hidden" name="lng" value="' + (p.lng || '') + '">' +
+        '<button type="button" class="btn ghost" data-act="use-loc">用当前位置</button>' +
+        '<button class="btn primary" type="submit" style="margin-top:10px">' + (isEdit ? '保存' : '收进来') + '</button>' +
+      '</form>';
+  }
+
+  function openPlaceForm(p) {
+    openSheet(placeForm(p));
+    var host = $('#pickmap');
+    if (!host) return;
+    var pin = (p && typeof p.lat === 'number') ? { lat: p.lat, lng: p.lng } : null;
+    var center = pin || state.loc || FALLBACK;
+    var map = new MiniMap(host, {
+      center: center, zoom: pin ? 16 : (state.loc ? 16 : 12),
+      onTap: function (pt) {
+        pin = pt;
+        map.setMarks([{ lat: pt.lat, lng: pt.lng, cls: 'hot' }]);
+        map.render();
+        var f = $('#f-place');
+        f.elements.lat.value = pt.lat;
+        f.elements.lng.value = pt.lng;
+        $('#pickinfo').textContent = '已选：' + pt.lat.toFixed(5) + ', ' + pt.lng.toFixed(5);
+      }
+    });
+    map.setMarks(pin ? [{ lat: pin.lat, lng: pin.lng, cls: 'hot' }] : []);
+    setTimeout(function () { map.render(); }, 60);
+    window._pickMap = map;
+  }
+
+  function openBlogger(b) {
+    b = b || {};
+    var isEdit = !!b.id;
+    openSheet('<h3>' + (isEdit ? '编辑博主' : '添加博主') + '</h3>' +
+      '<form id="f-blogger" data-id="' + (b.id || '') + '">' +
+        '<label class="f"><span>名字</span><input type="text" name="name" required value="' + esc(b.name || '') + '"></label>' +
+        '<div class="row2">' +
+          '<label class="f"><span>平台</span><select name="platform">' +
+            ['抖音', '小红书', 'B站', '视频号', '公众号', '其他'].map(function (x) {
+              return '<option' + (b.platform === x ? ' selected' : '') + '>' + x + '</option>';
+            }).join('') + '</select></label>' +
+          '<label class="f"><span>主页链接</span><input type="text" name="url" value="' + esc(b.url || '') + '"></label>' +
+        '</div>' +
+        '<label class="f"><span>备注（他怎么找店、口味偏好）</span><textarea name="note">' + esc(b.note || '') + '</textarea></label>' +
+        '<button class="btn primary" type="submit">保存</button>' +
+      '</form>');
+  }
+
+  /* ================= 定位 ================= */
+  function locMsg(err) {
+    var c = err && err.code;
+    if (c === 1) return '定位权限被拒了。iPhone：设置 → Safari 浏览器 → 位置 → 改成「询问」或「允许」；或者长按地址栏左边那个「aA」看站点设置。';
+    if (c === 2) return '系统给不出位置：定位服务可能关着（设置 → 隐私与安全性 → 定位服务 → Safari 网站）。';
+    if (c === 3) return '等太久没回来。换个位置或换个网络再试。';
+    return '没拿到位置：' + ((err && err.message) || '未知原因') + '。';
+  }
+
+  function locate() {
+    if (!navigator.geolocation) {
+      state.locStatus = 'denied';
+      state.locErr = '这个浏览器不给定位接口。';
+      render(); return;
+    }
+    state.locStatus = 'pending';
+    state.locErr = '';
+    state.pickMe = false;
+    render();
+
+    var done = false;
+    function ok(pos) {
+      if (done) return; done = true;
+      var g = wgsToGcj(pos.coords.latitude, pos.coords.longitude);
+      state.loc = g;
+      state.acc = pos.coords.accuracy;
+      state.locStatus = 'ok';
+      state.locErr = '';
+      state.mapView = { center: g, zoom: 15 };
+      render();
+      toast('定位成功 · 精度 ' + Math.round(pos.coords.accuracy || 0) + ' 米');
+    }
+    function giveUp(err) {
+      if (done) return; done = true;
+      state.locStatus = 'denied';
+      state.locErr = locMsg(err);
+      render();
+      toast('没拿到位置：错误码 ' + ((err && err.code) || '?'));
+    }
+    function fail(err) {
+      if (done) return;
+      // 高精度在室内/隧道/部分安卓机上经常直接超时，降一档再试一次
+      if (err && (err.code === 2 || err.code === 3)) {
+        navigator.geolocation.getCurrentPosition(ok, giveUp,
+          { enableHighAccuracy: false, timeout: 20000, maximumAge: 600000 });
+        return;
+      }
+      giveUp(err);
+    }
+    navigator.geolocation.getCurrentPosition(ok, fail,
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  }
+
+  /* ================= 表单处理 ================= */
+  function submitPlace(e) {
+    e.preventDefault();
+    var f = e.target, el = f.elements;
+    var name = el.name.value.trim();
+    if (!name) return;
+    var id = f.dataset.id;
+    var p = id ? placeById(id) : null;
+    if (!p) { p = { id: uid('p') }; S.places.unshift(p); }
+    p.name = name;
+    p.kind = el.kind.value;
+    p.city = el.city.value.trim() || S.city;
+    p.category = el.category.value;
+    p.price = +el.price.value;
+    p.scene = el.scene.value;
+    p.local = +el.local.value;
+    p.dish = el.dish.value.trim();
+    p.quote = el.quote.value.trim();
+    p.sourceUrl = el.sourceUrl.value.trim();
+    if (el.srcRaw && el.srcRaw.value) {
+      p.src = { platform: el.srcPlatform.value, raw: el.srcRaw.value };
+    }
+    p.address = el.address.value.trim();
+    p.bloggerId = el.bloggerId ? el.bloggerId.value : '';
+    var tv = {};
+    DIMS.forEach(function (d) { tv[d.k] = num(+el['t_' + d.k].value, 2.5); });
+    p.taste = tv;
+    if (el.lat.value && el.lng.value) {
+      p.lat = +el.lat.value; p.lng = +el.lng.value;
+    } else {
+      delete p.lat; delete p.lng;
+    }
+    save();
+    closeSheet();
+    render();
+    toast(id ? '已保存' : '收进来了');
+  }
+
+  function submitBlogger(e) {
+    e.preventDefault();
+    var f = e.target, el = f.elements;
+    var name = el.name.value.trim();
+    if (!name) return;
+    var id = f.dataset.id;
+    var b = id ? bloggerById(id) : null;
+    if (!b) {
+      b = { id: uid('b'), color: ['#C1492D', '#2F7D5D', '#B5651D', '#4A5D8F', '#8A5A9E'][S.bloggers.length % 5], hits: { good: 0, total: 0 } };
+      S.bloggers.push(b);
+    }
+    b.name = name;
+    b.platform = el.platform.value;
+    b.url = el.url.value.trim();
+    b.note = el.note.value.trim();
+    save(); closeSheet(); render(); toast('已保存');
+  }
+
+  function submitRate(e) {
+    e.preventDefault();
+    var f = e.target, id = f.dataset.id;
+    var p = placeById(id);
+    if (!p) return;
+    var rating = +(f.elements.rating.value || 4);
+    var note = f.elements.note.value.trim();
+    var v = visitOf(id);
+    var prev = v ? v.rating : null;
+    if (v) { v.rating = rating; v.note = note; v.at = Date.now(); }
+    else S.visits.push({ placeId: id, rating: rating, note: note, at: Date.now() });
+
+    var b = bloggerById(p.bloggerId);
+    if (b) {
+      if (!b.hits) b.hits = { good: 0, total: 0 };
+      if (prev == null) {
+        b.hits.total++;
+        if (rating >= 4) b.hits.good++;
+      } else {
+        if (prev >= 4 && rating < 4) b.hits.good = Math.max(0, b.hits.good - 1);
+        if (prev < 4 && rating >= 4) b.hits.good++;
+      }
+    }
+    save(); closeSheet(); render();
+    toast(b ? '记下了 ·「' + b.name + '」命中率 ' + Math.round(relOf(b) * 100) + '%' : '记下了');
+  }
+
+  /* ================= 事件 ================= */
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-act]');
+    if (t) {
+      var act = t.dataset.act, id = t.dataset.id, v = t.dataset.v;
+      if (act === 'tab') {
+        var nt = t.dataset.tab, changed = nt !== state.tab;
+        state.tab = nt; render();
+        if (changed) $('#view').scrollTop = 0;
+        return;
+      }
+      if (act === 'mode') {
+        state.mode = t.dataset.v; render();
+        toast(MODES[state.mode].label + ' · ' + MODES[state.mode].tip);
+        return;
+      }
+      if (act === 'kind') { state.kind = t.dataset.v; render(); return; }
+      if (act === 'place') { openPlace(id); return; }
+      if (act === 'rate') { openRate(id); return; }
+      if (act === 'add') { openAdd(); return; }
+      if (act === 'manual') { closeSheet(); setTimeout(function () { openPlaceForm(null); }, 120); return; }
+      if (act === 'import') { openImport(); return; }
+      if (act === 'paste-clip') { readClip(); return; }
+      if (act === 'parse') { doParse(); return; }
+      if (act === 'mood') { openMood(); return; }
+      if (act === 'mood-done') { closeSheet(); render(); toast('今儿：' + (moodText() || '随便')); return; }
+      if (act === 'mood-clear') { moodSave(null); render(); toast('已清空今天的偏好'); return; }
+      if (act === 'mood-dim') {
+        moodEdit(function (m) {
+          var i = m.dims.indexOf(v);
+          if (i >= 0) m.dims.splice(i, 1);
+          else if (m.dims.length < 3) m.dims.push(v);
+          else toast('最多选 3 个');
+        });
+        return;
+      }
+      if (act === 'mood-intent') { moodEdit(function (m) { m.intent = m.intent === v ? '' : v; }); return; }
+      if (act === 'mood-scene') { moodEdit(function (m) { m.scene = m.scene === v ? '' : v; }); return; }
+      if (act === 'mood-hunger') { moodEdit(function (m) { m.hungry = v === 'starving' ? !m.hungry : false; }); return; }
+      if (act === 'mood-price') { moodEdit(function (m) { m.price = num(m.price, 0) === +v ? 0 : +v; }); return; }
+      if (act === 'addblogger') { openBlogger(null); return; }
+      if (act === 'editblogger') { openBlogger(bloggerById(id)); return; }
+      if (act === 'quiz') { openQuiz(); return; }
+      if (act === 'quiz-opt') { quizPick(+t.dataset.i); return; }
+      if (act === 'quiz-next') { quizNext(); return; }
+      if (act === 'quiz-prev') { quizPrev(); return; }
+      if (act === 'quiz-done') { quizDone(); return; }
+      if (act === 'quiz-finish') { quizFinish(); return; }
+      if (act === 'editplace') { closeSheet(); setTimeout(function () { openPlaceForm(placeById(id)); }, 120); return; }
+      if (act === 'delplace') {
+        if (!confirm('删掉「' + (placeById(id) || {}).name + '」？')) return;
+        S.places = S.places.filter(function (p) { return p.id !== id; });
+        save(); closeSheet(); render(); toast('已删除'); return;
+      }
+      if (act === 'nav') {
+        var p = placeById(id);
+        if (p && typeof p.lat === 'number') {
+          window.open('https://uri.amap.com/marker?position=' + p.lng + ',' + p.lat +
+            '&name=' + encodeURIComponent(p.name) + '&src=tastemap&coordinate=gaode&callnative=1', '_blank');
+        } else { toast('这家还没定位置'); }
+        return;
+      }
+      if (act === 'use-loc') {
+        var f = $('#f-place');
+        if (!state.loc) { toast('还没定位到'); locate(); return; }
+        f.elements.lat.value = state.loc.lat;
+        f.elements.lng.value = state.loc.lng;
+        $('#pickinfo').textContent = '已选（当前位置）：' + state.loc.lat.toFixed(5) + ', ' + state.loc.lng.toFixed(5);
+        if (window._pickMap) {
+          window._pickMap.c = state.loc;
+          window._pickMap.z = 16;
+          window._pickMap.setMarks([{ lat: state.loc.lat, lng: state.loc.lng, cls: 'hot' }]);
+          window._pickMap.render();
+        }
+        return;
+      }
+      if (act === 'locate') { locate(); return; }
+      if (act === 'pickme') {
+        state.pickMe = true;
+        render();
+        toast('在地图上点一下你所在的位置');
+        return;
+      }
+      if (act === 'export') {
+        var blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'taste-map-' + new Date().toISOString().slice(0, 10) + '.json';
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+        return;
+      }
+      if (act === 'import') { $('#importFile').click(); return; }
+      if (act === 'reset') {
+        if (!confirm('恢复示例数据？现在的数据会被覆盖。')) return;
+        S = freshSeed(); save(); render(); toast('已恢复示例数据'); return;
+      }
+      if (act === 'me-scene') {
+        if (!S.me) S.me = {};
+        var arr = S.me.scenes || (S.me.scenes = []);
+        var i = arr.indexOf(t.dataset.v);
+        if (i >= 0) arr.splice(i, 1); else arr.push(t.dataset.v);
+        save(); render(); return;
+      }
+    }
+  });
+
+  /* 口味滑杆：拖动时只改数字，松手才落盘，避免边拖边重渲染 */
+  document.addEventListener('input', function (e) {
+    var r = e.target;
+    if (r.dataset && r.dataset.dim) {
+      if (!S.me) S.me = {};
+      if (!S.me.taste) S.me.taste = {};
+      S.me.taste[r.dataset.dim] = +r.value;
+      var em = r.parentNode.querySelector('em');
+      if (em) em.textContent = r1(+r.value);
+    }
+  });
+  document.addEventListener('change', function (e) {
+    var r = e.target;
+    if (r.dataset && r.dataset.dim) {
+      save();
+      toast('已更新口味 · 去「附近」看排序');
+      return;
+    }
+    if (r.id === 'importFile' && r.files && r.files[0]) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        try {
+          var o = JSON.parse(fr.result);
+          if (!o.places || !o.bloggers) throw new Error('格式不对');
+          if (!confirm('导入会覆盖现在的数据，继续？')) return;
+          S = migrate(o); save(); render(); toast('导入成功');
+        } catch (err) { toast('导入失败：' + err.message); }
+      };
+      fr.readAsText(r.files[0]);
+    }
+  });
+
+  document.addEventListener('submit', function (e) {
+    if (e.target.id === 'f-place') submitPlace(e);
+    else if (e.target.id === 'f-blogger') submitBlogger(e);
+    else if (e.target.id === 'f-rate') submitRate(e);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeSheet();
+  });
+
+  var rt;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () {
+      if (state.tab === 'nearby') { var m = $('#map'); if (m) mountMap(); }
+    }, 200);
+  });
+
+  /* ================= 启动 ================= */
+  S = load();
+  render();
+  locate();
+
+  /* 暴露给自检脚本 */
+  window.__tm = {
+    ranked: ranked, tasteOf: tasteOf, state: state, quizDone: quizDone, typeOf: typeOf, render: render, quizHTML: quizHTML, parseNote: parseNote, moodText: moodText, openAdd: openAdd, locate: locate,
+    setMode: function (m) { state.mode = m; return ranked(); },
+    getS: function () { return S; }
+  };
+})();
+

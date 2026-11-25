@@ -1,0 +1,14 @@
+{
+  "name": "口味地图 · 博主推荐",
+  "short_name": "口味地图",
+  "description": "把口味相近的博主推荐的店收进来，到一个新城市按距离看。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBF6EE",
+  "theme_color": "#FBF6EE",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
