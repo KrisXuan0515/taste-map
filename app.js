@@ -387,7 +387,10 @@
 
   function freshSeed() {
     var o = JSON.parse(JSON.stringify(window.SEED));
-    o.visits = [];
+    o.visits = o.visits || [];
+    o.want = [];
+    o.hidden = [];
+    o.deleted = [];
     return o;
   }
 
@@ -422,7 +425,37 @@
         if (a) p.taste = arrToVec(a);
       }
     });
+    syncSeed(o);
     return o;
+  }
+
+  /* 内置示例数据会随版本增补（比如新加的广州三家）。
+     已有存档不会自动带进来，这里按 id 补差集；用户删过的记在 deleted 里，不再补。
+     只补内置数据，你自己的录入永远不会被覆盖。 */
+  function syncSeed(o) {
+    var seed = window.SEED || {};
+    if (!o.deleted) o.deleted = [];
+    var gone = o.deleted;
+    var haveP = {};
+    (o.places || []).forEach(function (p) { haveP[p.id] = 1; });
+    (seed.places || []).forEach(function (p) {
+      if (haveP[p.id] || gone.indexOf(p.id) >= 0) return;
+      var c = JSON.parse(JSON.stringify(p));
+      if (!c.city) c.city = o.city;
+      o.places.push(c);
+    });
+    var haveB = {};
+    (o.bloggers || []).forEach(function (b) { haveB[b.id] = 1; });
+    (seed.bloggers || []).forEach(function (b) {
+      if (haveB[b.id] || gone.indexOf(b.id) >= 0) return;
+      o.bloggers.push(JSON.parse(JSON.stringify(b)));
+    });
+    var haveV = {};
+    (o.visits || []).forEach(function (v) { haveV[v.id] = 1; });
+    (seed.visits || []).forEach(function (v) {
+      if (haveV[v.id]) return;
+      o.visits.push(JSON.parse(JSON.stringify(v)));
+    });
   }
 
   function load() {
@@ -763,6 +796,7 @@
       banner + promo +
       '<div class="mapwrap"><div class="mm" id="map"></div></div>' +
       '<div class="chips" style="padding:0 16px 8px">' + kindChip('all', '全部') + kindChip('eat', '吃') + kindChip('spot', '逛') + '</div>' +
+      '<div class="addbar"><button class="btn ghost" data-act="add">＋ 收录一家（粘一条链接，或手填）</button></div>' +
       '<div class="list">' +
         (items.length
           ? hero(items[0], 1) +
@@ -1810,6 +1844,8 @@
       if (act === 'delplace') {
         if (!confirm('删掉「' + (placeById(id) || {}).name + '」？')) return;
         S.places = S.places.filter(function (p) { return p.id !== id; });
+        S.deleted = S.deleted || [];
+        if (S.deleted.indexOf(id) < 0) S.deleted.push(id);
         save(); closeSheet(); render(); toast('已删除'); return;
       }
       if (act === 'good') { recordVerdict(id, 'good'); return; }
@@ -1934,7 +1970,7 @@
     setCity: function (c) { S.city = c; save(); state.mapView = null; return ranked(); },
     setTab: function (t) { state.tab = t; },
     openPlaceForm: openPlaceForm, openHidden: openHidden, openAmapKey: openAmapKey,
-    lookup: lookup, pickPoi: pickPoi, amapKey: amapKey, jsonp: jsonp
+    lookup: lookup, pickPoi: pickPoi, amapKey: amapKey, jsonp: jsonp, syncSeed: syncSeed
   };
 })();
 

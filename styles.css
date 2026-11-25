@@ -252,21 +252,23 @@ button.city i { font-style: normal; font-size: 11px; opacity: .45; transform: tr
 
 /* ---------- fab ---------- */
 .fab {
-  position: absolute;
-  right: 16px;
-  bottom: calc(66px + env(safe-area-inset-bottom));
+  position: fixed;
+  right: max(16px, calc(50vw - 264px));
+  bottom: calc(74px + env(safe-area-inset-bottom));
   display: grid;
   place-items: center;
-  width: 50px; height: 50px;
+  width: 54px; height: 54px;
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  font-size: 27px;
+  font-size: 30px;
   font-weight: 300;
   line-height: 1;
-  box-shadow: 0 5px 16px rgba(193, 73, 45, .38);
-  z-index: 5;
+  box-shadow: 0 5px 16px rgba(46, 107, 79, .42);
+  z-index: 6;
 }
+.addbar { padding: 0 16px 12px; }
+.addbar .btn { width: 100%; }
 
 /* ---------- sheet ---------- */
 #sheet-root { position: fixed; inset: 0; z-index: 50; pointer-events: none; }

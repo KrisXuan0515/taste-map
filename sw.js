@@ -1,13 +1,13 @@
-﻿/* 鍙ｅ懗鍦板浘 - 绂荤嚎缂撳瓨
-   绛栫暐锛氬悓婧愯祫婧?network-first锛堟嬁鍒版柊鐗堝氨鐢ㄦ柊鐗堬紝鏂綉鎵嶅洖缂撳瓨锛夛紝
-        閬垮厤寮€鍙戞湡鎵嬫満涓€鐩村悆鍒版棫鐨?app.js / data.js銆?*/
-var CACHE = 'taste-map-v5';
+/* 口味地图 - 离线缓存
+   策略：同源资源 network-first（拿到新版就用新版，断网才回缓存），
+        避免开发期手机一直吃到旧的 app.js / data.js。 */
+var CACHE = 'taste-map-v6';
 var CORE = ['./', './index.html', './styles.css', './app.js', './data.js', './extra.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(
     caches.open(CACHE).then(function (c) {
-      return c.addAll(CORE).catch(function () { /* 鍗曚釜澶辫触涓嶉樆濉炲畨瑁?*/ });
+      return c.addAll(CORE).catch(function () { /* 单个失败不阻塞安装 */ });
     }).then(function () { return self.skipWaiting(); })
   );
 });
@@ -24,7 +24,7 @@ self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
   var url = new URL(req.url);
-  // 楂樺痉鐡︾墖绛夌涓夋柟璧勬簮鐩存帴璧扮綉缁滐紝涓嶈繘缂撳瓨
+  // 高德瓦片等第三方资源直接走网络，不进缓存
   if (url.origin !== location.origin) return;
 
   e.respondWith(

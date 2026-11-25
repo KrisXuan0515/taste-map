@@ -238,7 +238,34 @@ window.SEED = {
       dish: '小蛮腰 · 夜景',
       quote: '「傍晚上塔，下来正好吃饭。」',
       sourceUrl: '', bloggerId: ''
+    },
+    {
+      id: 'p_chengfeng', kind: 'eat', name: '诚峰石磨肠粉', city: '广州',
+      lat: 23.0928, lng: 113.2618, address: '海珠区', region: '海珠区',
+      flavors: [], category: '粤菜', price: 1, scene: '一人食',
+      dish: '石磨肠粉',
+      quote: '米浆现磨，布拉肠薄到透光，豉油偏甜。',
+      sourceUrl: '', bloggerId: 'b_nav'
+    },
+    {
+      id: 'p_shengxiangting', kind: 'eat', name: '盛香亭丽影广场店', city: '广州',
+      lat: 23.0956, lng: 113.2738, address: '江南大道中丽影广场', region: '海珠区',
+      flavors: [], category: '热卤', price: 1, scene: '一人食',
+      dish: '热卤 · 藕片 · 鸭脖',
+      quote: '热卤现捞，辣度能选微辣；当宵夜比当正餐合适。',
+      sourceUrl: '', bloggerId: 'b_nav'
+    },
+    {
+      id: 'p_laodifang', kind: 'eat', name: '老地方巢皮肠粉', city: '广州',
+      lat: 23.0902, lng: 113.2685, address: '海珠区', region: '海珠区',
+      flavors: [], category: '粤菜', price: 1, scene: '一人食',
+      dish: '巢皮肠粉',
+      quote: '踩雷：皮厚、豉油死咸。',
+      sourceUrl: '', bloggerId: ''
     }
+  ],
+  visits: [
+    { id: 'v_laodifang', placeId: 'p_laodifang', rating: 1.5, verdict: 'bad', at: '2026-11-25', note: '皮厚，豉油死咸' }
   ]
 };
 
@@ -254,7 +281,8 @@ window.SEED = {
     p_weixiangzhai: [3, '本帮'], p_laofandian: [3, '本帮'], p_lvbolang: [3, '本帮'],
     p_chuanwei: [1, '川'], p_chaoshan: [1, '潮汕'],
     p_bund: [3, '地标'], p_yuyuan: [3, '地标'], p_wukang: [3, '地标'], p_jingan: [3, '地标'],
-    p_taotaoju: [3, '粤菜'], p_bingsheng: [3, '粤菜'], p_cantontower: [3, '地标']
+    p_taotaoju: [3, '粤菜'], p_bingsheng: [3, '粤菜'], p_cantontower: [3, '地标'],
+    p_chengfeng: [3, '粤菜'], p_shengxiangting: [1, '热卤'], p_laodifang: [2, '粤菜']
   };
   window.SEED.places.forEach(function (p) {
     var x = LT[p.id];
@@ -274,7 +302,9 @@ window.TASTE_BY_CUISINE = {
   '川': [4, 2.5, 1, 3.5, 1.5, 3, 2, 2.5, 1.5],
   '潮汕': [0.5, 0, 0.5, 3, 1, 1, 4.5, 1, 1],
   '沪式': [0, 0, 2, 4, 1, 3.5, 2, 2, 0.5],
-  '粤菜': [0, 0, 2.5, 3, 0.5, 2.5, 4, 3, 1]
+  '粤菜': [0, 0, 2.5, 3, 0.5, 2.5, 4, 3, 1],
+  '热卤': [1.5, 0.5, 1, 3.5, 1, 2.5, 2.5, 2, 1.5],
+  '小吃': [0, 0, 2, 3.5, 1, 3, 2.5, 2, 1]
 };
 
 /* 单店覆盖：让 18 家在口味轴上真的分得开 */
@@ -294,5 +324,8 @@ window.TASTE_PLACES = {
   p_chuanwei:     [4.5, 3, 1, 4, 2, 4, 2, 3, 2.5],        /* 辣 */
   p_chaoshan:     [0.5, 0, 0.5, 3, 1, 1, 5, 1, 1.5],       /* 追鲜 */
   p_taotaoju:     [0, 0, 3, 3, 0.5, 2.5, 4, 3, 1],         /* 广州早茶，偏甜鲜 */
-  p_bingsheng:    [0, 0, 2, 3.5, 0.5, 3, 4, 3.5, 1]        /* 镬气重 */
+  p_bingsheng:    [0, 0, 2, 3.5, 0.5, 3, 4, 3.5, 1],       /* 镬气重 */
+  p_chengfeng:    [0.5, 0, 1.5, 2.5, 0.5, 1.5, 3.5, 1.5, 0.5], /* 石磨肠粉，米香淡口 */
+  p_shengxiangting:[1.5, 0.5, 1, 3.5, 1, 2.5, 2.5, 2, 1.5],    /* 热卤，咸香油辣 */
+  p_laodifang:    [0.5, 0, 1.5, 3, 0.5, 2, 2.5, 1.5, 0.5]  /* 巢皮肠粉，暂按店型估 */
 };
